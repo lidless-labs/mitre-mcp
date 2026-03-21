@@ -84,8 +84,29 @@ export function registerCampaignTools(
           .sort((a, b) => b.overlapScore - a.overlapScore)
           .slice(0, 10);
 
+        // Find matching known campaigns
+        const allCampaigns = store.getAllCampaigns();
+        const matchingCampaigns = allCampaigns
+          .map((campaign) => {
+            const campaignTechs = store
+              .getCampaignTechniques(campaign.stixId)
+              .map((t) => t.technique.id);
+            const shared = campaignTechs.filter((t) => observedIds.has(t));
+            return {
+              campaign: `${campaign.id} - ${campaign.name}`,
+              firstSeen: campaign.firstSeen,
+              lastSeen: campaign.lastSeen,
+              overlapScore: Math.round(
+                (shared.length / observedIds.size) * 100,
+              ),
+              sharedTechniques: shared,
+            };
+          })
+          .filter((m) => m.sharedTechniques.length > 0)
+          .sort((a, b) => b.overlapScore - a.overlapScore)
+          .slice(0, 10);
+
         // Suggest next techniques commonly seen with these
-        // Look at what the top groups also use but we haven't observed
         const suggestedNext = new Map<string, number>();
         for (const match of likelyGroups.slice(0, 3)) {
           const group = store.getGroup(match.group.split(" - ")[0]);
@@ -142,9 +163,211 @@ export function registerCampaignTools(
                   tacticCoverage,
                   likelyGroups,
                   likelySoftware,
+                  matchingCampaigns,
                   suggestedNextTechniques,
                   mitigationPriorities,
                 },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "mitre_get_campaign",
+    "Get details on a known ATT&CK campaign including techniques, software, and attributed groups",
+    {
+      campaignId: z
+        .string()
+        .optional()
+        .describe('Campaign ID (e.g., "C0001")'),
+      name: z
+        .string()
+        .optional()
+        .describe("Campaign name"),
+    },
+    async ({ campaignId, name }) => {
+      try {
+        const lookup = campaignId || name;
+        if (!lookup) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Must provide either campaignId or name",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const campaign = store.getCampaign(lookup);
+        if (!campaign) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Campaign "${lookup}" not found`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const techniques = store
+          .getCampaignTechniques(campaign.stixId)
+          .map((t) => ({
+            id: t.technique.id,
+            name: t.technique.name,
+            usage: t.usage,
+          }));
+
+        const software = store
+          .getCampaignSoftware(campaign.stixId)
+          .map((s) => ({
+            id: s.software.id,
+            name: s.software.name,
+            type: s.software.type,
+          }));
+
+        // Find attributed group via relationships
+        const attributedGroups = store
+          .getRelationships()
+          .filter(
+            (r) =>
+              r.sourceRef === campaign.stixId &&
+              r.relationshipType === "attributed-to",
+          )
+          .map((r) => {
+            const group = store.getAllGroups().find((g) => g.stixId === r.targetRef);
+            return group ? { id: group.id, name: group.name } : null;
+          })
+          .filter((g): g is NonNullable<typeof g> => g !== null);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  id: campaign.id,
+                  name: campaign.name,
+                  description: campaign.description,
+                  aliases: campaign.aliases,
+                  firstSeen: campaign.firstSeen,
+                  lastSeen: campaign.lastSeen,
+                  attributedGroups,
+                  techniques,
+                  software,
+                  references: campaign.references,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "mitre_list_campaigns",
+    "List all known ATT&CK campaigns with names, dates, and brief descriptions",
+    {},
+    async () => {
+      try {
+        const campaigns = store.getAllCampaigns().map((c) => ({
+          id: c.id,
+          name: c.name,
+          aliases: c.aliases,
+          firstSeen: c.firstSeen,
+          lastSeen: c.lastSeen,
+          description: c.description.slice(0, 200),
+        }));
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { count: campaigns.length, campaigns },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "mitre_search_campaigns",
+    "Search campaigns by keyword or by technique usage",
+    {
+      query: z
+        .string()
+        .optional()
+        .describe("Keyword search across campaign name, aliases, description"),
+      technique: z
+        .string()
+        .optional()
+        .describe("Find campaigns using a specific technique ID"),
+    },
+    async ({ query, technique }) => {
+      try {
+        const results = store.searchCampaigns({ query, technique });
+
+        const summary = results.slice(0, 50).map((c) => ({
+          id: c.id,
+          name: c.name,
+          aliases: c.aliases,
+          firstSeen: c.firstSeen,
+          lastSeen: c.lastSeen,
+          description: c.description.slice(0, 200),
+        }));
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { count: results.length, campaigns: summary },
                 null,
                 2,
               ),

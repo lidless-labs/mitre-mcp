@@ -1,4 +1,5 @@
 import type {
+  AttackCampaign,
   AttackDataComponent,
   AttackDataSource,
   AttackGroup,
@@ -20,6 +21,7 @@ import {
   loadCachedBundles,
 } from "./loader.js";
 import {
+  parseCampaigns,
   parseDataComponents,
   parseDataSources,
   parseGroups,
@@ -46,6 +48,9 @@ export class AttackDataStore {
   private dataSources: Map<string, AttackDataSource> = new Map();
   private dataSourcesByStixId: Map<string, AttackDataSource> = new Map();
   private dataSourcesByName: Map<string, AttackDataSource> = new Map();
+  private campaigns: Map<string, AttackCampaign> = new Map();
+  private campaignsByStixId: Map<string, AttackCampaign> = new Map();
+  private campaignsByName: Map<string, AttackCampaign> = new Map();
   private dataComponents: AttackDataComponent[] = [];
   private relationships: AttackRelationship[] = [];
 
@@ -136,6 +141,16 @@ export class AttackDataStore {
       this.dataSources.set(ds.id, ds);
       this.dataSourcesByStixId.set(ds.stixId, ds);
       this.dataSourcesByName.set(ds.name.toLowerCase(), ds);
+    }
+
+    const campaigns = parseCampaigns(bundle);
+    for (const c of campaigns) {
+      this.campaigns.set(c.id, c);
+      this.campaignsByStixId.set(c.stixId, c);
+      this.campaignsByName.set(c.name.toLowerCase(), c);
+      for (const alias of c.aliases) {
+        this.campaignsByName.set(alias.toLowerCase(), c);
+      }
     }
 
     this.dataComponents.push(...parseDataComponents(bundle));
@@ -491,6 +506,99 @@ export class AttackDataStore {
       .filter((t): t is AttackTechnique => !!t && !t.deprecated && !t.revoked);
   }
 
+  // Campaign queries
+
+  getCampaign(idOrName: string): AttackCampaign | undefined {
+    return (
+      this.campaigns.get(idOrName.toUpperCase()) ||
+      this.campaignsByName.get(idOrName.toLowerCase())
+    );
+  }
+
+  getAllCampaigns(includeDeprecated = false): AttackCampaign[] {
+    const all = Array.from(this.campaigns.values());
+    if (includeDeprecated) return all;
+    return all.filter((c) => !c.deprecated && !c.revoked);
+  }
+
+  searchCampaigns(opts: { query?: string; technique?: string }): AttackCampaign[] {
+    let results = this.getAllCampaigns();
+
+    if (opts.query) {
+      const q = opts.query.toLowerCase();
+      results = results.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.description.toLowerCase().includes(q) ||
+          c.aliases.some((a) => a.toLowerCase().includes(q)),
+      );
+    }
+
+    if (opts.technique) {
+      const techStixId = this.techniques.get(opts.technique.toUpperCase())?.stixId;
+      if (techStixId) {
+        const campaignStixIds = new Set(
+          this.relationships
+            .filter(
+              (r) =>
+                r.targetRef === techStixId && r.relationshipType === "uses",
+            )
+            .map((r) => r.sourceRef),
+        );
+        results = results.filter((c) => campaignStixIds.has(c.stixId));
+      } else {
+        results = [];
+      }
+    }
+
+    return results;
+  }
+
+  getCampaignTechniques(
+    campaignStixId: string,
+  ): Array<{ technique: AttackTechnique; usage: string }> {
+    return this.relationships
+      .filter(
+        (r) => r.sourceRef === campaignStixId && r.relationshipType === "uses",
+      )
+      .map((r) => {
+        const technique = this.techniquesByStixId.get(r.targetRef);
+        if (!technique || technique.deprecated || technique.revoked) return null;
+        return { technique, usage: r.description };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }
+
+  getCampaignSoftware(
+    campaignStixId: string,
+  ): Array<{ software: AttackSoftware }> {
+    return this.relationships
+      .filter(
+        (r) => r.sourceRef === campaignStixId && r.relationshipType === "uses",
+      )
+      .map((r) => {
+        const sw = this.softwareByStixId.get(r.targetRef);
+        if (!sw) return null;
+        return { software: sw };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }
+
+  getCampaignsForGroup(groupStixId: string): AttackCampaign[] {
+    const campaignStixIds = new Set(
+      this.relationships
+        .filter(
+          (r) =>
+            r.targetRef === groupStixId &&
+            r.relationshipType === "attributed-to",
+        )
+        .map((r) => r.sourceRef),
+    );
+    return Array.from(campaignStixIds)
+      .map((id) => this.campaignsByStixId.get(id))
+      .filter((c): c is AttackCampaign => !!c && !c.deprecated && !c.revoked);
+  }
+
   // Relationship helpers
 
   getRelationships(): AttackRelationship[] {
@@ -517,6 +625,7 @@ export class AttackDataStore {
     software: number;
     mitigations: number;
     dataSources: number;
+    campaigns: number;
     relationships: number;
   } {
     return {
@@ -526,6 +635,7 @@ export class AttackDataStore {
       software: this.getAllSoftware().length,
       mitigations: this.getAllMitigations().length,
       dataSources: this.getAllDataSources().length,
+      campaigns: this.getAllCampaigns().length,
       relationships: this.relationships.length,
     };
   }
