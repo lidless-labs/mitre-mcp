@@ -58,6 +58,24 @@ Add to your Claude Desktop configuration (`claude_desktop_config.json`):
 }
 ```
 
+### OpenClaw
+
+Add to your `openclaw.json`:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "mitre-attack": {
+        "type": "stdio",
+        "command": "node",
+        "args": ["/path/to/mitre-mcp/dist/index.js"]
+      }
+    }
+  }
+}
+```
+
 ### Standalone
 
 ```bash
