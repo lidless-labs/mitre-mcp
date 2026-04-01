@@ -1,4 +1,5 @@
 import type {
+  AttackCampaign,
   AttackDataComponent,
   AttackDataSource,
   AttackGroup,
@@ -11,6 +12,7 @@ import type {
   ENTERPRISE_TACTIC_ORDER,
   StixAttackPattern,
   StixBundle,
+  StixCampaign,
   StixCourseOfAction,
   StixDataComponent,
   StixDataSource,
@@ -197,6 +199,25 @@ export function parseDataComponents(
     name: dc.name || "",
     description: dc.description || "",
     dataSourceId: dc.x_mitre_data_source_ref || "",
+  }));
+}
+
+export function parseCampaigns(bundle: StixBundle): AttackCampaign[] {
+  const campaigns = bundle.objects.filter(
+    (obj): obj is StixCampaign => obj.type === "campaign" && !!obj.name,
+  );
+
+  return campaigns.map((c) => ({
+    id: getExternalId(c.external_references),
+    stixId: c.id,
+    name: c.name || "",
+    description: c.description || "",
+    aliases: c.aliases || [],
+    firstSeen: c.first_seen || null,
+    lastSeen: c.last_seen || null,
+    deprecated: c.x_mitre_deprecated === true,
+    revoked: c.revoked === true,
+    references: parseReferences(c.external_references),
   }));
 }
 

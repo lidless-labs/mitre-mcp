@@ -207,8 +207,102 @@ export const ENTERPRISE_TACTIC_ORDER: Record<string, number> = {
 
 export type MatrixType = "enterprise" | "mobile" | "ics";
 
+// Parsed campaign type
+export interface AttackCampaign {
+  id: string;
+  stixId: string;
+  name: string;
+  description: string;
+  aliases: string[];
+  firstSeen: string | null;
+  lastSeen: string | null;
+  deprecated: boolean;
+  revoked: boolean;
+  references: AttackReference[];
+}
+
+// Navigator layer types
+export interface NavigatorLayer {
+  name: string;
+  versions: {
+    attack: string;
+    navigator: string;
+    layer: string;
+  };
+  domain: string;
+  description: string;
+  filters: {
+    platforms: string[];
+  };
+  sorting: number;
+  layout: {
+    layout: string;
+    aggregateFunction: string;
+    showID: boolean;
+    showName: boolean;
+    showAggregateScores: boolean;
+    countUnscored: boolean;
+  };
+  hideDisabled: boolean;
+  techniques: NavigatorTechniqueEntry[];
+  gradient: {
+    colors: string[];
+    minValue: number;
+    maxValue: number;
+  };
+  legendItems: NavigatorLegendItem[];
+  metadata: Array<{ name: string; value: string }>;
+  links: Array<{ label: string; url: string }>;
+  showTacticRowBackground: boolean;
+  tacticRowBackground: string;
+  selectTechniquesAcrossTactics: boolean;
+  selectSubtechniquesWithParent: boolean;
+  selectVisibleTechniques: boolean;
+}
+
+export interface NavigatorTechniqueEntry {
+  techniqueID: string;
+  tactic?: string;
+  color: string;
+  comment: string;
+  enabled: boolean;
+  metadata: Array<{ name: string; value: string }>;
+  links: Array<{ label: string; url: string }>;
+  showSubtechniques: boolean;
+  score?: number;
+}
+
+export interface NavigatorLegendItem {
+  label: string;
+  color: string;
+}
+
+// SOC integration config
+export interface SocConfig {
+  wazuh?: {
+    url: string;
+    username: string;
+    password: string;
+    verifySsl: boolean;
+  };
+  thehive?: {
+    url: string;
+    apiKey: string;
+  };
+  cortex?: {
+    url: string;
+    apiKey: string;
+  };
+  misp?: {
+    url: string;
+    apiKey: string;
+    verifySsl: boolean;
+  };
+}
+
 export interface MitreConfig {
   dataDir: string;
   matrices: MatrixType[];
   updateInterval: number;
+  soc: SocConfig;
 }

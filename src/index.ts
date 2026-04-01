@@ -10,18 +10,30 @@ import { registerMitigationTools } from "./tools/mitigations.js";
 import { registerDataSourceTools } from "./tools/datasources.js";
 import { registerMappingTools } from "./tools/mapping.js";
 import { registerCampaignTools } from "./tools/campaigns.js";
+import { registerNavigatorTools } from "./tools/navigator.js";
 import { registerManagementTools } from "./tools/management.js";
 import { registerResources } from "./resources.js";
 import { registerPrompts } from "./prompts.js";
+import {
+  WazuhClient,
+  TheHiveClient,
+  CortexClient,
+  MispClient,
+  registerWazuhTools,
+  registerTheHiveTools,
+  registerCortexTools,
+  registerMispTools,
+  registerCorrelationTools,
+} from "./soc/index.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
 
   const server = new McpServer({
     name: "mitre-mcp",
-    version: "1.0.0",
+    version: "2.0.0",
     description:
-      "MITRE ATT&CK knowledge base MCP server for technique lookup, threat intelligence, detection coverage analysis, and campaign attribution",
+      "MITRE ATT&CK MCP server with SOC integration (Wazuh, TheHive, Cortex, MISP). Technique lookup, threat intelligence, detection coverage, alert mapping, campaign analysis, and cross-stack correlation.",
   });
 
   const store = new AttackDataStore(config);
@@ -32,7 +44,7 @@ async function main(): Promise<void> {
     await store.initialize();
     const stats = store.getStats();
     console.error(
-      `ATT&CK data loaded: ${stats.techniques} techniques, ${stats.groups} groups, ${stats.software} software, ${stats.mitigations} mitigations`,
+      `ATT&CK data loaded: ${stats.techniques} techniques, ${stats.groups} groups, ${stats.software} software, ${stats.mitigations} mitigations, ${stats.campaigns} campaigns`,
     );
   } catch (error) {
     console.error(
@@ -41,7 +53,7 @@ async function main(): Promise<void> {
     console.error("Some tools may not work until data is available.");
   }
 
-  // Register all tools
+  // Register core ATT&CK tools
   registerTechniqueTools(server, store);
   registerTacticTools(server, store);
   registerGroupTools(server, store);
@@ -50,16 +62,60 @@ async function main(): Promise<void> {
   registerDataSourceTools(server, store);
   registerMappingTools(server, store);
   registerCampaignTools(server, store);
+  registerNavigatorTools(server, store);
   registerManagementTools(server, store, config);
 
   // Register resources and prompts
   registerResources(server, store, config);
   registerPrompts(server);
 
+  // Initialize SOC clients and register integration tools
+  const socClients: {
+    wazuh?: WazuhClient;
+    thehive?: TheHiveClient;
+    cortex?: CortexClient;
+    misp?: MispClient;
+  } = {};
+
+  if (config.soc.wazuh) {
+    console.error(`Wazuh integration enabled: ${config.soc.wazuh.url}`);
+    const wazuhClient = new WazuhClient(config.soc.wazuh);
+    socClients.wazuh = wazuhClient;
+    registerWazuhTools(server, store, wazuhClient);
+  }
+
+  if (config.soc.thehive) {
+    console.error(`TheHive integration enabled: ${config.soc.thehive.url}`);
+    const thehiveClient = new TheHiveClient(config.soc.thehive);
+    socClients.thehive = thehiveClient;
+    registerTheHiveTools(server, store, thehiveClient);
+  }
+
+  if (config.soc.cortex) {
+    console.error(`Cortex integration enabled: ${config.soc.cortex.url}`);
+    const cortexClient = new CortexClient(config.soc.cortex);
+    socClients.cortex = cortexClient;
+    registerCortexTools(server, store, cortexClient);
+  }
+
+  if (config.soc.misp) {
+    console.error(`MISP integration enabled: ${config.soc.misp.url}`);
+    const mispClient = new MispClient(config.soc.misp);
+    socClients.misp = mispClient;
+    registerMispTools(server, store, mispClient);
+  }
+
+  // Register cross-stack correlation tools (always available, uses whatever clients exist)
+  registerCorrelationTools(server, store, socClients);
+
   // Connect to transport
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("MITRE ATT&CK MCP server running on stdio");
+
+  const socList = Object.keys(socClients);
+  console.error(
+    `MITRE ATT&CK MCP server v2.0.0 running on stdio${socList.length > 0 ? ` | SOC: ${socList.join(", ")}` : ""}`,
+  );
 }
 
 main().catch((error) => {
