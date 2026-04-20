@@ -65,12 +65,13 @@ npm run build
 
 ### Claude Desktop
 
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
 ```json
 {
   "mcpServers": {
     "mitre-attack": {
-      "command": "node",
-      "args": ["/path/to/mitre-mcp/dist/index.js"],
+      "command": "mitre-mcp",
       "env": {
         "MITRE_MATRICES": "enterprise",
         "WAZUH_URL": "https://192.168.1.10:55000",
@@ -90,22 +91,99 @@ npm run build
 }
 ```
 
+### Claude Code
+
+```bash
+claude mcp add mitre-attack \
+  --env MITRE_MATRICES=enterprise \
+  -- mitre-mcp
+```
+
+Add `--scope user` to make it available from any directory instead of only the current project. Add `--env` flags for any SOC integrations (Wazuh, TheHive, Cortex, MISP) you want to enable.
+
 ### OpenClaw
 
-Add to your `openclaw.json`:
+If you're running from a source checkout instead of the npm-installed binary, point `command`/`args` at the built `dist/index.js`:
 
-```json
-{
-  "mcp": {
-    "servers": {
-      "mitre-attack": {
-        "type": "stdio",
-        "command": "node",
-        "args": ["/path/to/mitre-mcp/dist/index.js"]
-      }
-    }
+```bash
+openclaw mcp set mitre-attack '{
+  "command": "node",
+  "args": ["/absolute/path/to/mitre-mcp/dist/index.js"],
+  "env": {
+    "MITRE_MATRICES": "enterprise"
   }
-}
+}'
+```
+
+Or, with the global npm install:
+
+```bash
+openclaw mcp set mitre-attack '{
+  "command": "mitre-mcp",
+  "env": {
+    "MITRE_MATRICES": "enterprise"
+  }
+}'
+```
+
+Then restart the OpenClaw gateway so the new server is picked up:
+
+```bash
+systemctl --user restart openclaw-gateway
+openclaw mcp list   # confirm "mitre-attack" is registered
+```
+
+### Hermes Agent
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) reads MCP config from `~/.hermes/config.yaml` under the `mcp_servers` key. Add an entry:
+
+```yaml
+mcp_servers:
+  mitre-attack:
+    command: "mitre-mcp"
+    env:
+      MITRE_MATRICES: "enterprise"
+```
+
+Or, when running from a source checkout instead of the global npm install:
+
+```yaml
+mcp_servers:
+  mitre-attack:
+    command: "node"
+    args: ["/absolute/path/to/mitre-mcp/dist/index.js"]
+    env:
+      MITRE_MATRICES: "enterprise"
+```
+
+Then reload MCP from inside a Hermes session:
+
+```
+/reload-mcp
+```
+
+### Codex CLI
+
+[Codex CLI](https://github.com/openai/codex) registers MCP servers via `codex mcp add`:
+
+```bash
+codex mcp add mitre-attack \
+  --env MITRE_MATRICES=enterprise \
+  -- mitre-mcp
+```
+
+Or, when running from a source checkout:
+
+```bash
+codex mcp add mitre-attack \
+  --env MITRE_MATRICES=enterprise \
+  -- node /absolute/path/to/mitre-mcp/dist/index.js
+```
+
+Codex writes the entry to `~/.codex/config.toml` under `[mcp_servers.mitre-attack]`. Verify with:
+
+```bash
+codex mcp list
 ```
 
 ### Standalone
