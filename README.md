@@ -49,15 +49,15 @@ npm run build
 
 | Variable | Description |
 |----------|-------------|
-| `WAZUH_URL` | Wazuh API URL (e.g., `https://192.168.1.10:55000`) |
+| `WAZUH_URL` | Wazuh API URL (e.g., `https://wazuh.example.internal:55000`) |
 | `WAZUH_USERNAME` | Wazuh API username (default: `wazuh-wui`) |
 | `WAZUH_PASSWORD` | Wazuh API password |
 | `WAZUH_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
-| `THEHIVE_URL` | TheHive URL (e.g., `http://192.168.1.11:9000`) |
+| `THEHIVE_URL` | TheHive URL (e.g., `http://thehive.example.internal:9000`) |
 | `THEHIVE_API_KEY` | TheHive API key |
-| `CORTEX_URL` | Cortex URL (e.g., `http://192.168.1.11:9001`) |
+| `CORTEX_URL` | Cortex URL (e.g., `http://cortex.example.internal:9001`) |
 | `CORTEX_API_KEY` | Cortex API key |
-| `MISP_URL` | MISP URL (e.g., `https://192.168.1.12`) |
+| `MISP_URL` | MISP URL (e.g., `https://misp.example.internal`) |
 | `MISP_API_KEY` | MISP API key (authkey) |
 | `MISP_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
 
@@ -74,15 +74,15 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "command": "mitre-mcp",
       "env": {
         "MITRE_MATRICES": "enterprise",
-        "WAZUH_URL": "https://192.168.1.10:55000",
+        "WAZUH_URL": "https://wazuh.example.internal:55000",
         "WAZUH_USERNAME": "wazuh-wui",
         "WAZUH_PASSWORD": "your-password",
         "WAZUH_VERIFY_SSL": "false",
-        "THEHIVE_URL": "http://192.168.1.11:9000",
+        "THEHIVE_URL": "http://thehive.example.internal:9000",
         "THEHIVE_API_KEY": "your-api-key",
-        "CORTEX_URL": "http://192.168.1.11:9001",
+        "CORTEX_URL": "http://cortex.example.internal:9001",
         "CORTEX_API_KEY": "your-api-key",
-        "MISP_URL": "https://192.168.1.12",
+        "MISP_URL": "https://misp.example.internal",
         "MISP_API_KEY": "your-api-key",
         "MISP_VERIFY_SSL": "false"
       }
