@@ -1,9 +1,18 @@
-# MITRE ATT&CK MCP Server
+<p align="center">
+  <img src="docs/assets/mitre-mcp-banner.jpg" alt="Watercolor ATT&CK Navigator layer map for mitre-mcp" width="100%" />
+</p>
 
-[![TypeScript 6](https://img.shields.io/badge/TypeScript-6-blue)](https://www.typescriptlang.org/)
-[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org/)
-[![MCP 1.x](https://img.shields.io/badge/MCP-1.x-purple)](https://modelcontextprotocol.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+<h1 align="center">mitre-mcp</h1>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/mitre-mcp"><img src="https://img.shields.io/npm/v/mitre-mcp?style=flat-square&logo=npm&color=cb3837" alt="npm version" /></a>
+  <a href="https://github.com/solomonneas/mitre-mcp/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/solomonneas/mitre-mcp/ci.yml?branch=main&style=flat-square&label=CI&logo=github" alt="CI status" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-6.0-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 6.0" /></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 20+" /></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP%20SDK-1.29-6f42c1?style=flat-square" alt="MCP SDK 1.29" /></a>
+  <a href="https://attack.mitre.org/"><img src="https://img.shields.io/badge/MITRE-ATT%26CK-d04437?style=flat-square" alt="MITRE ATT&CK" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT license" /></a>
+</p>
 
 An MCP server providing comprehensive access to the MITRE ATT&CK knowledge base with full SOC stack integration. Enables LLMs to look up techniques, map alerts to ATT&CK, analyze detection coverage, profile campaigns, generate Navigator layers, and correlate across Wazuh, TheHive, Cortex, and MISP.
 
