@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { TheHiveClient } from "./client.js";
+import { safePathSegment, writesAllowed } from "./util.js";
 
 export function registerTheHiveTools(
   server: McpServer,
@@ -20,6 +21,7 @@ export function registerTheHiveTools(
     },
     async ({ caseId, addTags }) => {
       try {
+        const safeCaseId = safePathSegment(caseId, "caseId");
         // Get case details
         const caseRes = await client.request<{
           _id: string;
@@ -28,7 +30,7 @@ export function registerTheHiveTools(
           tags: string[];
           severity: number;
           status: string;
-        }>("GET", `/api/v1/case/${caseId}`);
+        }>("GET", `/api/v1/case/${safeCaseId}`);
 
         if (!caseRes.ok || !caseRes.data) {
           return {
@@ -171,7 +173,7 @@ export function registerTheHiveTools(
             .filter((t) => !theCase.tags.includes(t));
 
           if (newTags.length > 0) {
-            const updateRes = await client.request("PATCH", `/api/v1/case/${caseId}`, {
+            const updateRes = await client.request("PATCH", `/api/v1/case/${safeCaseId}`, {
               tags: [...theCase.tags, ...newTags],
             });
 
@@ -247,8 +249,14 @@ export function registerTheHiveTools(
         )
         .optional()
         .describe("Observables to add to the case"),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Must be true to actually create the case in TheHive. Defaults to false (dry-run: returns the case that would be created without writing). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
+        ),
     },
-    async ({ title, description, techniques, severity, tlp, observables }) => {
+    async ({ title, description, techniques, severity, tlp, observables, confirm }) => {
       try {
         // Resolve techniques
         const resolvedTechs = techniques
@@ -298,6 +306,38 @@ export function registerTheHiveTools(
           ...new Set(resolvedTechs.flatMap((t) => t.tactics.map((ta) => `attack.${ta}`))),
         ];
 
+        // Write guard: skip the live TheHive mutation unless explicitly confirmed.
+        if (!writesAllowed(confirm)) {
+          const tacticPhases = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    dryRun: true,
+                    message:
+                      "Dry run: no case created. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to create.",
+                    wouldCreate: {
+                      title,
+                      severity: severity || 2,
+                      tlp: tlp || 2,
+                      tags,
+                      techniquesLinked: resolvedTechs.map((t) => t.id),
+                      observablesToAdd: (observables || []).map(
+                        (o) => `${o.dataType}: ${o.data}`,
+                      ),
+                      tasksToCreate: tacticPhases.map((t) => `Investigate: ${t}`),
+                    },
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
         // Create the case
         const caseRes = await client.request<{ _id: string }>(
           "POST",
@@ -325,6 +365,7 @@ export function registerTheHiveTools(
         }
 
         const caseId = caseRes.data._id;
+        const safeCaseId = safePathSegment(caseId, "caseId");
 
         // Add observables if provided
         const addedObservables: string[] = [];
@@ -332,7 +373,7 @@ export function registerTheHiveTools(
           for (const obs of observables) {
             const obsRes = await client.request(
               "POST",
-              `/api/v1/case/${caseId}/observable`,
+              `/api/v1/case/${safeCaseId}/observable`,
               {
                 dataType: obs.dataType,
                 data: obs.data,
@@ -359,7 +400,7 @@ export function registerTheHiveTools(
 
           const taskRes = await client.request(
             "POST",
-            `/api/v1/case/${caseId}/task`,
+            `/api/v1/case/${safeCaseId}/task`,
             {
               title: `Investigate: ${tactic}`,
               description: `Investigate techniques in the ${tactic} phase: ${relevantTechs}`,

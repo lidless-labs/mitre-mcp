@@ -1,3 +1,4 @@
+import { Agent } from "undici";
 import type { SocConfig } from "../types.js";
 
 export interface SocResponse<T = unknown> {
@@ -7,32 +8,69 @@ export interface SocResponse<T = unknown> {
   status?: number;
 }
 
-// Custom fetch that handles self-signed certs
+// Custom fetch that handles self-signed certs.
+//
+// When `rejectUnauthorized === false` we scope the relaxed TLS policy to a
+// single request via a per-request undici Agent passed as the `dispatcher`.
+// This avoids ever mutating the process-global `NODE_TLS_REJECT_UNAUTHORIZED`,
+// which would disable certificate validation for ALL concurrent outbound
+// requests (a MITM window that could leak SOC credentials).
 async function socFetch(
   url: string,
   options: RequestInit & { rejectUnauthorized?: boolean } = {},
 ): Promise<Response> {
   const { rejectUnauthorized, ...fetchOpts } = options;
 
-  // Node 18+ supports custom TLS options via the dispatcher,
-  // but the simplest cross-version approach is setting the env var.
-  // For individual requests, we use the global agent approach.
   if (rejectUnauthorized === false) {
-    // Temporarily allow self-signed certs
-    const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    const agent = new Agent({ connect: { rejectUnauthorized: false } });
     try {
-      return await fetch(url, fetchOpts);
+      // `dispatcher` is an undici extension to RequestInit honored by the
+      // global fetch implementation in Node 18+.
+      return await fetch(url, {
+        ...fetchOpts,
+        dispatcher: agent,
+      } as RequestInit);
     } finally {
-      if (prev === undefined) {
-        delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      } else {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev;
-      }
+      // Release the per-request connection pool promptly.
+      void agent.close();
     }
   }
 
   return fetch(url, fetchOpts);
+}
+
+// Safely read a SOC response body. Many SOC platforms return HTML/plain-text
+// error pages (auth redirects, reverse-proxy 502s, rate limiters) with a
+// success-looking shape; calling `.json()` unconditionally throws and masks
+// the real HTTP status. Guard on content-type and fall back to text.
+async function parseResponseBody<T>(
+  response: Response,
+): Promise<{ data?: T; error?: string }> {
+  const contentType = response.headers.get("content-type") || "";
+  const raw = await response.text();
+
+  if (contentType.includes("application/json") || contentType.includes("+json")) {
+    if (raw.length === 0) return { data: undefined };
+    try {
+      return { data: JSON.parse(raw) as T };
+    } catch {
+      // Declared JSON but unparseable: surface a snippet instead of crashing.
+      return {
+        error: `Non-JSON response (HTTP ${response.status}): ${raw.slice(0, 300)}`,
+      };
+    }
+  }
+
+  // Non-JSON body: try to parse anyway (some servers omit the header), else
+  // surface the text so the caller sees the real status/error.
+  if (raw.length === 0) return { data: undefined };
+  try {
+    return { data: JSON.parse(raw) as T };
+  } catch {
+    return {
+      error: `Non-JSON response (HTTP ${response.status}): ${raw.slice(0, 300)}`,
+    };
+  }
 }
 
 // Wazuh client
@@ -101,8 +139,13 @@ export class WazuhClient {
         rejectUnauthorized: this.verifySsl,
       });
 
-      const data = (await response.json()) as T;
-      return { ok: response.ok, data, status: response.status };
+      const { data, error: parseError } = await parseResponseBody<T>(response);
+      return {
+        ok: response.ok && !parseError,
+        data,
+        error: parseError,
+        status: response.status,
+      };
     } catch (error) {
       return {
         ok: false,
@@ -139,8 +182,13 @@ export class TheHiveClient {
         body: body ? JSON.stringify(body) : undefined,
       });
 
-      const data = (await response.json()) as T;
-      return { ok: response.ok, data, status: response.status };
+      const { data, error: parseError } = await parseResponseBody<T>(response);
+      return {
+        ok: response.ok && !parseError,
+        data,
+        error: parseError,
+        status: response.status,
+      };
     } catch (error) {
       return {
         ok: false,
@@ -177,8 +225,13 @@ export class CortexClient {
         body: body ? JSON.stringify(body) : undefined,
       });
 
-      const data = (await response.json()) as T;
-      return { ok: response.ok, data, status: response.status };
+      const { data, error: parseError } = await parseResponseBody<T>(response);
+      return {
+        ok: response.ok && !parseError,
+        data,
+        error: parseError,
+        status: response.status,
+      };
     } catch (error) {
       return {
         ok: false,
@@ -219,8 +272,13 @@ export class MispClient {
         rejectUnauthorized: this.verifySsl,
       });
 
-      const data = (await response.json()) as T;
-      return { ok: response.ok, data, status: response.status };
+      const { data, error: parseError } = await parseResponseBody<T>(response);
+      return {
+        ok: response.ok && !parseError,
+        data,
+        error: parseError,
+        status: response.status,
+      };
     } catch (error) {
       return {
         ok: false,

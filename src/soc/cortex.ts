@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { CortexClient } from "./client.js";
+import { safePathSegment, writesAllowed } from "./util.js";
 
 // Mapping of common Cortex analyzer types to ATT&CK data sources
 const ANALYZER_TO_DATASOURCE: Record<string, string[]> = {
@@ -195,13 +196,22 @@ export function registerCortexTools(
         .number()
         .optional()
         .describe("TLP level (0=white, 1=green, 2=amber, 3=red, default: 2)"),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Must be true to actually submit live analyzer jobs to Cortex against the observable. Defaults to false (dry-run: returns the analyzers that would run without submitting). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
+        ),
     },
-    async ({ data, dataType, analyzers, tlp }) => {
+    async ({ data, dataType, analyzers, tlp, confirm }) => {
       try {
+        // dataType is schema-constrained, but encode defensively before it
+        // enters the request path.
+        const safeDataType = safePathSegment(dataType, "dataType");
         // Get available analyzers for this data type
         const analyzersRes = await client.request<
           Array<{ id: string; name: string; dataTypeList: string[] }>
-        >("GET", `/api/analyzer/type/${dataType}`);
+        >("GET", `/api/analyzer/type/${safeDataType}`);
 
         if (!analyzersRes.ok) {
           return {
@@ -224,13 +234,55 @@ export function registerCortexTools(
           );
         }
 
+        const analyzersToRun = availableAnalyzers.slice(0, 5);
+
+        // Write guard: submitting live analyzer jobs runs active tooling
+        // against an attacker-influenced observable (sandboxes detonate files,
+        // reputation lookups leak IOCs). Require explicit confirmation.
+        if (!writesAllowed(confirm)) {
+          const dryRunHints: Record<string, string[]> = {
+            ip: ["T1071", "T1573", "T1041", "T1090"],
+            domain: ["T1071", "T1568", "T1583.001"],
+            url: ["T1071.001", "T1566.002", "T1189"],
+            hash: ["T1204", "T1059"],
+            file: ["T1204", "T1059", "T1027"],
+            mail: ["T1566.001", "T1566.002"],
+          };
+          const suggestedTechniques = (dryRunHints[dataType] || [])
+            .map((id) => {
+              const tech = store.getTechnique(id);
+              return tech ? { id: tech.id, name: tech.name } : null;
+            })
+            .filter((t): t is NonNullable<typeof t> => t !== null);
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    dryRun: true,
+                    message:
+                      "Dry run: no analyzer jobs submitted. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to run.",
+                    observable: { data, dataType },
+                    analyzersThatWouldRun: analyzersToRun.map((a) => a.name),
+                    suggestedAttackContext: suggestedTechniques,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
         // Run analyzers (submit jobs)
         const jobs: Array<{ analyzerId: string; analyzerName: string; jobId?: string; error?: string }> = [];
 
-        for (const analyzer of availableAnalyzers.slice(0, 5)) {
+        for (const analyzer of analyzersToRun) {
           const jobRes = await client.request<{ id: string }>(
             "POST",
-            `/api/analyzer/${analyzer.id}/run`,
+            `/api/analyzer/${safePathSegment(analyzer.id, "analyzerId")}/run`,
             {
               data,
               dataType,

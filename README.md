@@ -69,6 +69,20 @@ npm run build
 | `MISP_URL` | MISP URL (e.g., `https://misp.example.internal`) |
 | `MISP_API_KEY` | MISP API key (authkey) |
 | `MISP_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
+| `MITRE_SOC_ALLOW_WRITES` | Globally pre-authorize state-changing SOC tools (default: off). When unset, write tools run in dry-run mode unless the call passes `confirm: true`. Set to `true`/`1`/`yes` to allow writes without per-call confirmation. |
+
+### SOC write safety
+
+State-changing SOC tools (`mitre_misp_create_event`, `mitre_thehive_create_case`, and `mitre_cortex_run_analyzers`) default to a **dry run**: they return the action they *would* perform without touching the SOC platform. To actually execute, either:
+
+- pass `confirm: true` in the individual tool call, or
+- set `MITRE_SOC_ALLOW_WRITES=true` to pre-authorize all SOC writes for the session.
+
+`mitre_cortex_run_analyzers` is the highest-impact tool (it submits live analyzer jobs, including sandbox detonation, against the supplied observable), so confirm it deliberately. `mitre_thehive_enrich` keeps its existing `addTags` flag (default `false`, read-only analysis) as its write guard.
+
+When SSL verification is disabled (`*_VERIFY_SSL=false`), the relaxed TLS policy is scoped to each individual request and never disables certificate validation globally, so concurrent requests to other hosts remain protected.
+
+IDs supplied to SOC tools (event IDs, case IDs, agent IDs, data types) are validated against a strict allow-list and URL-encoded before being placed in API request paths.
 
 ## Usage
 

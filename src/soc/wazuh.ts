@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { WazuhClient } from "./client.js";
+import { safePathSegment } from "./util.js";
 
 // Mapping of Wazuh rule groups to ATT&CK tactic short names
 const WAZUH_GROUP_TO_TACTIC: Record<string, string[]> = {
@@ -436,7 +437,7 @@ export function registerWazuhTools(
         const n = Math.min(limit || 10, 100);
         let path = `/alerts?limit=${n}&sort=-timestamp`;
         if (level) path += `&min_level=${level}`;
-        if (agentId) path += `&agent_id=${agentId}`;
+        if (agentId) path += `&agent_id=${safePathSegment(agentId, "agentId")}`;
         if (search) path += `&search=${encodeURIComponent(search)}`;
 
         const res = await client.request<{

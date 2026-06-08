@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { MispClient } from "./client.js";
+import { safePathSegment, writesAllowed } from "./util.js";
 
 export function registerMispTools(
   server: McpServer,
@@ -16,6 +17,7 @@ export function registerMispTools(
     },
     async ({ eventId }) => {
       try {
+        const safeEventId = safePathSegment(eventId, "eventId");
         const res = await client.request<{
           Event?: {
             id: string;
@@ -54,7 +56,7 @@ export function registerMispTools(
               }>;
             }>;
           };
-        }>("GET", `/events/view/${eventId}`);
+        }>("GET", `/events/view/${safeEventId}`);
 
         if (!res.ok || !res.data?.Event) {
           return {
@@ -407,8 +409,14 @@ export function registerMispTools(
         )
         .optional()
         .describe("Attributes/IOCs to add"),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe(
+          "Must be true to actually create the event in MISP. Defaults to false (dry-run: returns the event that would be created without writing). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
+        ),
     },
-    async ({ info, techniques, threatLevel, distribution, attributes }) => {
+    async ({ info, techniques, threatLevel, distribution, attributes, confirm }) => {
       try {
         const resolvedTechs = techniques
           .map((id) => store.getTechnique(id))
@@ -417,6 +425,37 @@ export function registerMispTools(
         const threatLevelId = { high: "1", medium: "2", low: "3" }[
           threatLevel || "medium"
         ];
+
+        // Write guard: skip the live MISP mutation unless explicitly confirmed.
+        if (!writesAllowed(confirm)) {
+          const tactics = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    dryRun: true,
+                    message:
+                      "Dry run: no event created. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to create.",
+                    wouldCreate: {
+                      info,
+                      threatLevel: threatLevel || "medium",
+                      distribution: distribution ?? 0,
+                      techniquesToTag: resolvedTechs.map((t) => t.id),
+                      tacticsToTag: tactics,
+                      attributesToAdd: (attributes || []).map(
+                        (a) => `${a.type}: ${a.value}`,
+                      ),
+                    },
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
 
         // Create event
         const eventRes = await client.request<{
@@ -444,12 +483,13 @@ export function registerMispTools(
         }
 
         const eventId = eventRes.data.Event.id;
+        const safeEventId = safePathSegment(eventId, "eventId");
 
         // Add ATT&CK technique tags
         const addedTags: string[] = [];
         for (const tech of resolvedTechs) {
           const tagName = `misp-galaxy:mitre-attack-pattern="${tech.id} - ${tech.name}"`;
-          const tagRes = await client.request("POST", `/events/addTag/${eventId}`, {
+          const tagRes = await client.request("POST", `/events/addTag/${safeEventId}`, {
             tag: tagName,
           });
           if (tagRes.ok) addedTags.push(tagName);
@@ -458,7 +498,7 @@ export function registerMispTools(
         // Add tactic tags
         const tactics = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
         for (const tactic of tactics) {
-          const tagRes = await client.request("POST", `/events/addTag/${eventId}`, {
+          const tagRes = await client.request("POST", `/events/addTag/${safeEventId}`, {
             tag: `mitre:tactic="${tactic}"`,
           });
           if (tagRes.ok) addedTags.push(`mitre:tactic="${tactic}"`);
@@ -470,7 +510,7 @@ export function registerMispTools(
           for (const attr of attributes) {
             const attrRes = await client.request(
               "POST",
-              `/attributes/add/${eventId}`,
+              `/attributes/add/${safeEventId}`,
               {
                 type: attr.type,
                 value: attr.value,
