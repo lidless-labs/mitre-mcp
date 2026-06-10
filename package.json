@@ -1,6 +1,6 @@
 {
   "name": "mitre-mcp",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "MCP server for MITRE ATT&CK knowledge base - technique lookup, threat intelligence, detection coverage analysis",
   "type": "module",
   "main": "dist/index.js",
