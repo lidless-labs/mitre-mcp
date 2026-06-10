@@ -449,11 +449,14 @@ mitre-mcp/
       cortex.ts           # Cortex analyzer coverage mapping
       misp.ts             # MISP event/IOC management
       correlation.ts      # Cross-stack ATT&CK correlation
+      util.ts             # Shared SOC security helpers (ID validation, write gating)
       index.ts            # SOC module barrel export
   tests/
     parser.test.ts        # STIX parser tests
     tools.test.ts         # Data store query tests
     mapping.test.ts       # Mapping and correlation tests
+    soc-security.test.ts  # SOC security regression tests (TLS scoping, ID encoding, write gates)
+  CHANGELOG.md
   package.json
   tsconfig.json
   tsup.config.ts
