@@ -25,13 +25,14 @@ import {
   registerMispTools,
   registerCorrelationTools,
 } from "./soc/index.js";
+import pkg from "../package.json";
 
 async function main(): Promise<void> {
   const config = loadConfig();
 
   const server = new McpServer({
     name: "mitre-mcp",
-    version: "2.0.0",
+    version: pkg.version,
     description:
       "MITRE ATT&CK MCP server with SOC integration (Wazuh, TheHive, Cortex, MISP). Technique lookup, threat intelligence, detection coverage, alert mapping, campaign analysis, and cross-stack correlation.",
   });
