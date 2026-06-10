@@ -1,11 +1,12 @@
 # Repository Guidance
 
 ## Definition of Done
-A change is done only when ALL of these pass, run fresh after your last edit:
-- `npm run typecheck`
-- `npm test`
-- `npm run build`
+```
+./scripts/verify
+```
+It runs `npm run typecheck`, `npm test`, and `npm run build` in order.
 
+A change is done only when that passes, run fresh after your last edit.
 Report the actual results. If any command fails, paste the failure verbatim,
 say the task is not done, and do not claim success. Never report results from
 before your final edit; re-run after every change.
