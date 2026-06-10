@@ -20,9 +20,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - run: npm test
-        continue-on-error: true
+      - run: ./scripts/verify
 
   publish:
     needs: test
