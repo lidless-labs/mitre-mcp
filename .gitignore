@@ -22,3 +22,7 @@ FRONTEND_DESIGN.md
 
 # Local learnings (never commit)
 .learnings/
+
+# Local brigade memory (cards are local-only, never committed)
+/memory/
+.brigade/
