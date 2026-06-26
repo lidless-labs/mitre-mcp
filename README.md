@@ -5,48 +5,101 @@
 <h1 align="center">mitre-mcp</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/mitre-mcp"><img src="https://img.shields.io/npm/v/mitre-mcp?style=flat-square&logo=npm&color=cb3837" alt="npm version" /></a>
-  <a href="https://github.com/solomonneas/mitre-mcp/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/solomonneas/mitre-mcp/ci.yml?branch=main&style=flat-square&label=CI&logo=github" alt="CI status" /></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-6.0-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 6.0" /></a>
-  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 20+" /></a>
-  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP%20SDK-1.29-6f42c1?style=flat-square" alt="MCP SDK 1.29" /></a>
-  <a href="https://attack.mitre.org/"><img src="https://img.shields.io/badge/MITRE-ATT%26CK-d04437?style=flat-square" alt="MITRE ATT&CK" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT license" /></a>
+  <strong>An MCP server that puts the full MITRE ATT&CK knowledge base in front of your AI client, then connects it to your live SOC stack so an agent can map an alert to a technique, profile the group behind it, and find the gap in your detection coverage in one conversation.</strong>
 </p>
 
-An MCP server providing comprehensive access to the MITRE ATT&CK knowledge base with full SOC stack integration. Enables LLMs to look up techniques, map alerts to ATT&CK, analyze detection coverage, profile campaigns, generate Navigator layers, and correlate across Wazuh, TheHive, Cortex, and MISP.
+<p align="center">
+  <a href="https://www.npmjs.com/package/mitre-mcp"><img src="https://img.shields.io/npm/v/mitre-mcp?style=for-the-badge&logo=npm&color=cb3837&label=npm" alt="npm version" /></a>
+  <a href="https://github.com/lidless-labs/mitre-mcp/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lidless-labs/mitre-mcp/ci.yml?branch=main&style=for-the-badge&label=CI&logo=github" alt="CI status" /></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-server-6f42c1?style=for-the-badge" alt="MCP server" /></a>
+  <a href="https://attack.mitre.org/"><img src="https://img.shields.io/badge/MITRE-ATT%26CK-d04437?style=for-the-badge" alt="MITRE ATT&CK" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT license" /></a>
+</p>
 
-## Features
+<p align="center">
+  <a href="https://lidless.dev/mitre-mcp"><strong>Website &amp; docs &rarr; lidless.dev/mitre-mcp</strong></a>
+</p>
 
-- **39 tools** for technique lookup, tactic navigation, group intelligence, software analysis, mitigation mapping, detection coverage, alert mapping, campaign profiling, Navigator layer export, and SOC integration
-- **3 resources** for matrix overview, version info, and tactic listing
-- **4 prompts** for incident mapping, threat hunting, gap analysis, and attribution
-- **SOC Integration**: Wazuh alert mapping, TheHive case management, Cortex analyzer correlation, MISP event/IOC management
-- **Cross-stack correlation**: Search for ATT&CK techniques across all connected platforms simultaneously
-- **ATT&CK Navigator**: Generate layer JSON for heatmaps, group overlays, coverage maps, and diff views
-- **Campaign support**: Full STIX campaign object parsing and attribution
-- **Offline-capable** with local STIX 2.1 data caching
-- **Auto-updating** with configurable refresh intervals
-- **Enterprise, Mobile, and ICS** matrix support
+mitre-mcp is an [MCP](https://modelcontextprotocol.io/) server for the [MITRE ATT&CK](https://attack.mitre.org/) knowledge base. It exists because asking an LLM about adversary techniques from memory gives you stale, hallucinated technique IDs, while a SOC analyst needs the real, versioned ATT&CK data and the alerts in front of them. Unlike a plain ATT&CK lookup tool, mitre-mcp ships ATT&CK querying and live SOC integration (Wazuh, TheHive, Cortex, MISP) in the same server, so an agent can map a real alert to a technique and correlate it across your stack without leaving the chat.
 
-## Prerequisites
+## What it does
 
-- Node.js 20 or later
-- Internet access for initial ATT&CK data download (cached locally after first run)
-- (Optional) Wazuh, TheHive, Cortex, and/or MISP instances for SOC integration
+mitre-mcp gives an AI client structured, offline-capable access to MITRE ATT&CK: techniques, tactics, threat groups, software, mitigations, data sources, and campaigns, sourced from the official MITRE STIX 2.1 bundles and cached locally. On top of that knowledge base it adds threat-modeling and SOC workflow tools: it maps security alerts to likely ATT&CK techniques, analyzes detection coverage against your available data sources, profiles campaigns and attributes them to groups, and exports ATT&CK Navigator layer JSON for heatmaps and group overlays.
 
-## Installation
+It also connects to a running SOC stack. Optional integrations for Wazuh, TheHive, Cortex, and MISP let an agent map live Wazuh alerts to techniques, enrich and open TheHive cases with ATT&CK context, map Cortex analyzers to data sources, pull ATT&CK out of MISP galaxies, and cross-correlate one set of techniques across all of them at once. SOC integrations are entirely optional: with no credentials configured, mitre-mcp is a pure read-only ATT&CK server. Keywords for the curious: MITRE ATT&CK, MCP server, threat intelligence, threat modeling, detection coverage, ATT&CK Navigator, Wazuh, TheHive, Cortex, MISP, STIX 2.1, SOC.
+
+## Quickstart
+
+mitre-mcp is published on npm and runs with no install via `npx`. The fastest path is to register it with your MCP client.
+
+### Claude Code
 
 ```bash
-git clone https://github.com/solomonneas/mitre-mcp.git
+claude mcp add mitre-attack --env MITRE_MATRICES=enterprise -- npx -y mitre-mcp
+```
+
+Add `--scope user` to make it available from any directory. Add `--env` flags for any SOC integrations you want to enable.
+
+### Claude Desktop
+
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows). This is the minimal, ATT&CK-only configuration:
+
+```json
+{
+  "mcpServers": {
+    "mitre-attack": {
+      "command": "npx",
+      "args": ["-y", "mitre-mcp"],
+      "env": {
+        "MITRE_MATRICES": "enterprise"
+      }
+    }
+  }
+}
+```
+
+To enable the optional SOC integrations, add the relevant environment variables. Example hosts below use the [RFC 5737](https://datatracker.ietf.org/doc/html/rfc5737) documentation address `192.0.2.10`; replace them with your own:
+
+```json
+{
+  "mcpServers": {
+    "mitre-attack": {
+      "command": "npx",
+      "args": ["-y", "mitre-mcp"],
+      "env": {
+        "MITRE_MATRICES": "enterprise",
+        "WAZUH_URL": "https://192.0.2.10:55000",
+        "WAZUH_USERNAME": "wazuh-wui",
+        "WAZUH_PASSWORD": "your-password",
+        "THEHIVE_URL": "http://192.0.2.10:9000",
+        "THEHIVE_API_KEY": "your-api-key",
+        "CORTEX_URL": "http://192.0.2.10:9001",
+        "CORTEX_API_KEY": "your-api-key",
+        "MISP_URL": "https://192.0.2.10",
+        "MISP_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+The first run downloads the ATT&CK STIX bundles and caches them under `~/.mitre-mcp/data`; subsequent runs are offline until the next refresh.
+
+### From source
+
+```bash
+git clone https://github.com/lidless-labs/mitre-mcp.git
 cd mitre-mcp
 npm install
 npm run build
+npm test          # optional: run the test suite
 ```
+
+Other clients (OpenClaw, Hermes, Codex CLI) are covered under [Other MCP clients](#other-mcp-clients).
 
 ## Configuration
 
-### Core Settings
+### Core settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -54,19 +107,19 @@ npm run build
 | `MITRE_MATRICES` | `enterprise` | Comma-separated matrices: `enterprise`, `mobile`, `ics` |
 | `MITRE_UPDATE_INTERVAL` | `86400` | Auto-update check interval in seconds (default 24h) |
 
-### SOC Integration (all optional)
+### SOC integration (all optional)
 
 | Variable | Description |
 |----------|-------------|
-| `WAZUH_URL` | Wazuh API URL (e.g., `https://wazuh.example.internal:55000`) |
+| `WAZUH_URL` | Wazuh API URL (e.g. `https://192.0.2.10:55000`) |
 | `WAZUH_USERNAME` | Wazuh API username (default: `wazuh-wui`) |
 | `WAZUH_PASSWORD` | Wazuh API password |
 | `WAZUH_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
-| `THEHIVE_URL` | TheHive URL (e.g., `http://thehive.example.internal:9000`) |
+| `THEHIVE_URL` | TheHive URL (e.g. `http://192.0.2.10:9000`) |
 | `THEHIVE_API_KEY` | TheHive API key |
-| `CORTEX_URL` | Cortex URL (e.g., `http://cortex.example.internal:9001`) |
+| `CORTEX_URL` | Cortex URL (e.g. `http://192.0.2.10:9001`) |
 | `CORTEX_API_KEY` | Cortex API key |
-| `MISP_URL` | MISP URL (e.g., `https://misp.example.internal`) |
+| `MISP_URL` | MISP URL (e.g. `https://192.0.2.10`) |
 | `MISP_API_KEY` | MISP API key (authkey) |
 | `MISP_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
 | `MITRE_SOC_ALLOW_WRITES` | Globally pre-authorize state-changing SOC tools (default: off). When unset, write tools run in dry-run mode unless the call passes `confirm: true`. Set to `true`/`1`/`yes` to allow writes without per-call confirmation. |
@@ -80,211 +133,37 @@ State-changing SOC tools (`mitre_misp_create_event`, `mitre_thehive_create_case`
 
 `mitre_cortex_run_analyzers` is the highest-impact tool (it submits live analyzer jobs, including sandbox detonation, against the supplied observable), so confirm it deliberately. `mitre_thehive_enrich` keeps its existing `addTags` flag (default `false`, read-only analysis) as its write guard.
 
-When SSL verification is disabled (`*_VERIFY_SSL=false`), the relaxed TLS policy is scoped to each individual request and never disables certificate validation globally, so concurrent requests to other hosts remain protected.
+When SSL verification is disabled (`*_VERIFY_SSL=false`), the relaxed TLS policy is scoped to each individual request and never disables certificate validation globally, so concurrent requests to other hosts remain protected. IDs supplied to SOC tools (event IDs, case IDs, agent IDs, data types) are validated against a strict allow-list and URL-encoded before being placed in API request paths.
 
-IDs supplied to SOC tools (event IDs, case IDs, agent IDs, data types) are validated against a strict allow-list and URL-encoded before being placed in API request paths.
+## Tools
 
-## Usage
+mitre-mcp registers **39 tools**, **3 resources**, and **4 prompts**. The 19 core ATT&CK tools work with no configuration; the 18 SOC tools require the matching integration to be configured (the 2 cross-stack tools degrade gracefully to whatever is connected).
 
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-```json
-{
-  "mcpServers": {
-    "mitre-attack": {
-      "command": "mitre-mcp",
-      "env": {
-        "MITRE_MATRICES": "enterprise",
-        "WAZUH_URL": "https://wazuh.example.internal:55000",
-        "WAZUH_USERNAME": "wazuh-wui",
-        "WAZUH_PASSWORD": "your-password",
-        "WAZUH_VERIFY_SSL": "false",
-        "THEHIVE_URL": "http://thehive.example.internal:9000",
-        "THEHIVE_API_KEY": "your-api-key",
-        "CORTEX_URL": "http://cortex.example.internal:9001",
-        "CORTEX_API_KEY": "your-api-key",
-        "MISP_URL": "https://misp.example.internal",
-        "MISP_API_KEY": "your-api-key",
-        "MISP_VERIFY_SSL": "false"
-      }
-    }
-  }
-}
-```
-
-### Claude Code
-
-```bash
-claude mcp add mitre-attack \
-  --env MITRE_MATRICES=enterprise \
-  -- mitre-mcp
-```
-
-Add `--scope user` to make it available from any directory instead of only the current project. Add `--env` flags for any SOC integrations (Wazuh, TheHive, Cortex, MISP) you want to enable.
-
-### OpenClaw
-
-If you're running from a source checkout instead of the npm-installed binary, point `command`/`args` at the built `dist/index.js`:
-
-```bash
-openclaw mcp set mitre-attack '{
-  "command": "node",
-  "args": ["/absolute/path/to/mitre-mcp/dist/index.js"],
-  "env": {
-    "MITRE_MATRICES": "enterprise"
-  }
-}'
-```
-
-Or, with the global npm install:
-
-```bash
-openclaw mcp set mitre-attack '{
-  "command": "mitre-mcp",
-  "env": {
-    "MITRE_MATRICES": "enterprise"
-  }
-}'
-```
-
-Then restart the OpenClaw gateway so the new server is picked up:
-
-```bash
-systemctl --user restart openclaw-gateway
-openclaw mcp list   # confirm "mitre-attack" is registered
-```
-
-### Hermes Agent
-
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) reads MCP config from `~/.hermes/config.yaml` under the `mcp_servers` key. Add an entry:
-
-```yaml
-mcp_servers:
-  mitre-attack:
-    command: "mitre-mcp"
-    env:
-      MITRE_MATRICES: "enterprise"
-```
-
-Or, when running from a source checkout instead of the global npm install:
-
-```yaml
-mcp_servers:
-  mitre-attack:
-    command: "node"
-    args: ["/absolute/path/to/mitre-mcp/dist/index.js"]
-    env:
-      MITRE_MATRICES: "enterprise"
-```
-
-Then reload MCP from inside a Hermes session:
-
-```
-/reload-mcp
-```
-
-### Codex CLI
-
-[Codex CLI](https://github.com/openai/codex) registers MCP servers via `codex mcp add`:
-
-```bash
-codex mcp add mitre-attack \
-  --env MITRE_MATRICES=enterprise \
-  -- mitre-mcp
-```
-
-Or, when running from a source checkout:
-
-```bash
-codex mcp add mitre-attack \
-  --env MITRE_MATRICES=enterprise \
-  -- node /absolute/path/to/mitre-mcp/dist/index.js
-```
-
-Codex writes the entry to `~/.codex/config.toml` under `[mcp_servers.mitre-attack]`. Verify with:
-
-```bash
-codex mcp list
-```
-
-### Standalone
-
-```bash
-npm run start
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-## Tool Reference
-
-### Core ATT&CK Tools (19)
-
-#### Technique Lookup
+### Core ATT&CK tools (19)
 
 | Tool | Description |
 |------|-------------|
 | `mitre_get_technique` | Get full details of a technique by ID (T1059, T1059.001) |
 | `mitre_search_techniques` | Search techniques by keyword, tactic, platform, data source |
-
-#### Tactic Navigation
-
-| Tool | Description |
-|------|-------------|
 | `mitre_list_tactics` | List all tactics in kill-chain order |
 | `mitre_get_tactic` | Get tactic details with all associated techniques |
-
-#### Threat Group Intelligence
-
-| Tool | Description |
-|------|-------------|
 | `mitre_get_group` | Get group details including techniques and software used |
 | `mitre_search_groups` | Search groups by keyword or technique usage |
 | `mitre_list_groups` | List all known threat groups |
-
-#### Software & Malware
-
-| Tool | Description |
-|------|-------------|
 | `mitre_get_software` | Get software details with techniques and associated groups |
 | `mitre_search_software` | Search software by name, technique, or type (malware/tool) |
-
-#### Mitigation Mapping
-
-| Tool | Description |
-|------|-------------|
 | `mitre_get_mitigation` | Get mitigation details with addressed techniques |
 | `mitre_mitigations_for_technique` | Get all mitigations for a specific technique |
 | `mitre_search_mitigations` | Search mitigations by keyword |
-
-#### Detection & Data Sources
-
-| Tool | Description |
-|------|-------------|
 | `mitre_get_datasource` | Get data source details with detectable techniques |
 | `mitre_detection_coverage` | Analyze detection coverage based on available data sources |
-
-#### Mapping & Correlation
-
-| Tool | Description |
-|------|-------------|
 | `mitre_map_alert_to_technique` | Map security alerts to likely ATT&CK techniques |
 | `mitre_technique_overlap` | Find technique overlap between groups for attribution |
 | `mitre_attack_path` | Generate possible attack paths through the kill chain |
-
-#### Data Management
-
-| Tool | Description |
-|------|-------------|
 | `mitre_update_data` | Force update of the local ATT&CK data cache |
 | `mitre_data_version` | Get current data version and object counts |
 
-### Campaign Tools (4)
+### Campaign tools (4)
 
 | Tool | Description |
 |------|-------------|
@@ -293,13 +172,13 @@ npm run dev
 | `mitre_list_campaigns` | List all known ATT&CK campaigns |
 | `mitre_search_campaigns` | Search campaigns by keyword or technique |
 
-### Navigator Layer Export (1)
+### Navigator layer export (1)
 
 | Tool | Description |
 |------|-------------|
 | `mitre_navigator_layer` | Generate ATT&CK Navigator JSON layers (coverage, group, campaign, diff) |
 
-### Wazuh Integration (4)
+### Wazuh integration (4)
 
 | Tool | Description |
 |------|-------------|
@@ -308,38 +187,38 @@ npm run dev
 | `mitre_wazuh_rule_coverage` | Analyze Wazuh rules mapped to ATT&CK techniques |
 | `mitre_wazuh_alerts` | Fetch recent alerts enriched with ATT&CK context |
 
-### TheHive Integration (3)
+### TheHive integration (3)
 
 | Tool | Description |
 |------|-------------|
 | `mitre_thehive_enrich` | Enrich a TheHive case with ATT&CK techniques and mitigations |
-| `mitre_thehive_create_case` | Create a case pre-populated with ATT&CK context |
+| `mitre_thehive_create_case` | Create a case pre-populated with ATT&CK context (write-gated) |
 | `mitre_thehive_list_cases` | List cases with ATT&CK technique filtering |
 
-### Cortex Integration (2)
+### Cortex integration (2)
 
 | Tool | Description |
 |------|-------------|
 | `mitre_cortex_analyzer_coverage` | Map Cortex analyzers to ATT&CK data sources |
-| `mitre_cortex_run_analyzers` | Run analyzers on observables with ATT&CK context |
+| `mitre_cortex_run_analyzers` | Run analyzers on observables with ATT&CK context (write-gated) |
 
-### MISP Integration (4)
+### MISP integration (4)
 
 | Tool | Description |
 |------|-------------|
 | `mitre_misp_event_to_attack` | Map MISP event attributes/galaxies to ATT&CK |
 | `mitre_misp_search_indicators` | Search MISP IOCs by technique or group |
-| `mitre_misp_create_event` | Create events pre-tagged with ATT&CK techniques |
+| `mitre_misp_create_event` | Create events pre-tagged with ATT&CK techniques (write-gated) |
 | `mitre_misp_list_events` | List events with ATT&CK enrichment |
 
-### Cross-Stack Correlation (2)
+### Cross-stack correlation (2)
 
 | Tool | Description |
 |------|-------------|
 | `mitre_soc_status` | Connection status for all SOC integrations |
 | `mitre_cross_correlate` | Search for techniques across Wazuh, TheHive, and MISP simultaneously |
 
-## Resource Reference
+### Resources
 
 | URI | Description |
 |-----|-------------|
@@ -347,7 +226,7 @@ npm run dev
 | `mitre://version` | Current data version and statistics |
 | `mitre://tactics` | All tactics in kill-chain order |
 
-## Prompt Reference
+### Prompts
 
 | Prompt | Description |
 |--------|-------------|
@@ -358,66 +237,107 @@ npm run dev
 
 ## Examples
 
-### Check SOC integration status
+Ask your agent in natural language; it picks the tool. A few that work out of the box:
 
 ```
-Use mitre_soc_status to check which SOC platforms are connected.
+Look up T1059.001 and list the mitigations for it.
 ```
 
-### Map a Wazuh alert to ATT&CK
-
 ```
-Use mitre_map_wazuh_alert with ruleId 5710 and ruleGroups ["sshd", "authentication_failed"]
-to find matching ATT&CK techniques.
+Generate an ATT&CK Navigator coverage layer for the data sources
+Process, Network Traffic, and File so I can see my detection gaps.
 ```
 
-### Create an ATT&CK-enriched TheHive case
-
 ```
-Use mitre_thehive_create_case with title "Suspected APT28 Activity",
-techniques ["T1059.001", "T1566.001", "T1078"] and severity 3
-to create a case with ATT&CK context, mitigations, and investigation tasks.
+Compare APT28 (G0007) and APT29 (G0016) as a Navigator diff layer.
 ```
 
-### Generate a Navigator coverage layer
+With a SOC stack connected:
 
 ```
-Use mitre_navigator_layer with mode "coverage" and
-dataSources ["Process", "Network Traffic", "File"]
-to generate a heatmap of detection coverage.
+Map Wazuh rule 5710 with groups ["sshd", "authentication_failed"]
+to ATT&CK techniques, then cross-correlate those techniques across
+Wazuh, TheHive, and MISP.
 ```
 
-### Cross-correlate across the SOC stack
+## Why not something else?
 
-```
-Use mitre_cross_correlate with techniques ["T1059.001", "T1566.001"]
-to search for related alerts in Wazuh, cases in TheHive, and events in MISP.
-```
+- **A plain "ask the LLM about ATT&CK" prompt** gives you confident, made-up technique IDs and last year's data. mitre-mcp serves the real, versioned STIX bundles MITRE publishes, cached locally and refreshable, so the technique IDs and relationships are correct.
+- **A generic ATT&CK API wrapper or the official `mitreattack-python` library** is a great data layer, but it stops at the data. mitre-mcp speaks MCP so any agent can call it, and it carries the analysis tools (alert mapping, coverage analysis, Navigator export, attribution) and the SOC integrations on top.
+- **Per-tool SOC plugins** (a Wazuh MCP here, a MISP MCP there) leave you wiring four servers and four mental models. mitre-mcp puts Wazuh, TheHive, Cortex, and MISP behind one ATT&CK-centric server with one correlation tool that spans all of them.
+- **A hosted threat-intel SaaS** sends your alerts to someone else's cloud. mitre-mcp runs on your machine, talks only to the SOC hosts you configure, and ships nothing to a third party.
 
-### Map a MISP event to ATT&CK
+## What mitre-mcp is not
 
-```
-Use mitre_misp_event_to_attack with eventId "1"
-to extract ATT&CK techniques from MISP galaxies and attributes.
-```
+- It is **not a SIEM or a replacement for Wazuh, TheHive, Cortex, or MISP**. It reads from and writes to them through their APIs; it does not store or index your events.
+- It is **not an autonomous responder**. State-changing SOC tools dry-run by default and require explicit `confirm: true` or `MITRE_SOC_ALLOW_WRITES=true` before they touch a platform.
+- It is **not a hosted service or a daemon**. It is a stdio MCP server your client launches on demand.
+- It does **not maintain the ATT&CK data itself**. The knowledge base is MITRE's; mitre-mcp downloads, parses, caches, and serves it.
+- It is **not a curated CTI feed**. It serves what MITRE publishes plus what your own SOC platforms contain.
 
-### Compare two threat groups
+## Other MCP clients
 
-```
-Use mitre_navigator_layer with mode "diff" and
-compareGroupIds ["G0007", "G0016"]
-to generate a visual comparison of APT28 vs APT29 techniques.
-```
+### OpenClaw
 
-## Testing
+With the global npm install:
 
 ```bash
-npm test            # Run all tests
-npm run test:watch  # Watch mode
-npm run lint        # Type check
+openclaw mcp set mitre-attack '{
+  "command": "npx",
+  "args": ["-y", "mitre-mcp"],
+  "env": { "MITRE_MATRICES": "enterprise" }
+}'
 ```
 
-## Project Structure
+Or from a source checkout, point at the built `dist/index.js`:
+
+```bash
+openclaw mcp set mitre-attack '{
+  "command": "node",
+  "args": ["/absolute/path/to/mitre-mcp/dist/index.js"],
+  "env": { "MITRE_MATRICES": "enterprise" }
+}'
+```
+
+Then restart the gateway so the server is picked up:
+
+```bash
+systemctl --user restart openclaw-gateway
+openclaw mcp list   # confirm "mitre-attack" is registered
+```
+
+### Hermes Agent
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) reads MCP config from `~/.hermes/config.yaml` under the `mcp_servers` key:
+
+```yaml
+mcp_servers:
+  mitre-attack:
+    command: "npx"
+    args: ["-y", "mitre-mcp"]
+    env:
+      MITRE_MATRICES: "enterprise"
+```
+
+Then reload MCP from inside a Hermes session with `/reload-mcp`.
+
+### Codex CLI
+
+[Codex CLI](https://github.com/openai/codex) registers MCP servers via `codex mcp add`:
+
+```bash
+codex mcp add mitre-attack --env MITRE_MATRICES=enterprise -- npx -y mitre-mcp
+```
+
+Codex writes the entry to `~/.codex/config.toml` under `[mcp_servers.mitre-attack]`. Verify with `codex mcp list`.
+
+## Prerequisites
+
+- Node.js 20 or later
+- Internet access for the initial ATT&CK data download (cached locally after the first run)
+- (Optional) Wazuh, TheHive, Cortex, and/or MISP instances for SOC integration
+
+## Project structure
 
 ```
 mitre-mcp/
@@ -427,44 +347,13 @@ mitre-mcp/
     types.ts              # STIX/ATT&CK type definitions
     resources.ts          # MCP resources
     prompts.ts            # MCP prompts
-    data/
-      loader.ts           # STIX bundle downloader and cache manager
-      parser.ts           # STIX 2.1 JSON parser (incl. campaigns)
-      index.ts            # Indexed, queryable ATT&CK data store
-    tools/
-      techniques.ts       # Technique lookup and search
-      tactics.ts          # Tactic navigation
-      groups.ts           # Threat group intelligence
-      software.ts         # Software/malware lookup
-      mitigations.ts      # Mitigation mapping
-      datasources.ts      # Data source and detection coverage
-      mapping.ts          # Alert-to-technique mapping and correlation
-      campaigns.ts        # Campaign analysis and attribution
-      navigator.ts        # ATT&CK Navigator layer generation
-      management.ts       # Data update management
-    soc/
-      client.ts           # HTTP clients for Wazuh, TheHive, Cortex, MISP
-      wazuh.ts            # Wazuh alert mapping and rule coverage
-      thehive.ts          # TheHive case enrichment and creation
-      cortex.ts           # Cortex analyzer coverage mapping
-      misp.ts             # MISP event/IOC management
-      correlation.ts      # Cross-stack ATT&CK correlation
-      util.ts             # Shared SOC security helpers (ID validation, write gating)
-      index.ts            # SOC module barrel export
-  tests/
-    parser.test.ts        # STIX parser tests
-    tools.test.ts         # Data store query tests
-    mapping.test.ts       # Mapping and correlation tests
-    soc-security.test.ts  # SOC security regression tests (TLS scoping, ID encoding, write gates)
-  CHANGELOG.md
-  package.json
-  tsconfig.json
-  tsup.config.ts
-  vitest.config.ts
-  README.md
+    data/                 # STIX downloader, parser, and indexed store
+    tools/                # Core ATT&CK tool registrations
+    soc/                  # Wazuh, TheHive, Cortex, MISP clients + correlation
+  tests/                  # Parser, query, mapping, and SOC security tests
 ```
 
-## Data Sources
+## Data sources
 
 ATT&CK data is sourced from the official MITRE STIX 2.1 bundles:
 
@@ -474,6 +363,10 @@ ATT&CK data is sourced from the official MITRE STIX 2.1 bundles:
 
 Data is downloaded on first run and cached locally. Set `MITRE_UPDATE_INTERVAL` to control how often the server checks for updates.
 
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution path and [SECURITY.md](SECURITY.md) to report a vulnerability privately. By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## License
 
-MIT
+[MIT](LICENSE)
