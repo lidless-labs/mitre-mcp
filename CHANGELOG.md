@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Docs
+- Rewrote the README to lead with what mitre-mcp is, why it exists, and how it
+  differs, with a copy-paste `npx -y mitre-mcp` MCP client config and the full
+  39-tool / 3-resource / 4-prompt reference verified against the server source.
+- Added a "Why not something else?" comparison and a "What mitre-mcp is not"
+  boundaries section.
+- Switched example SOC hosts to the RFC 5737 documentation address
+  (`192.0.2.10`).
+
+### Added
+- Maintainer-health files: `SECURITY.md`, `CONTRIBUTING.md`,
+  `CODE_OF_CONDUCT.md`, GitHub issue templates (`bug`, `feature`, plus a config
+  that disables blank issues and routes questions off-issue), and a pull
+  request template with a no-PII / content-guard checklist.
+
 ## [2.0.1] - 2026-06-10
 
 Security hardening release. Everything below was already on `main` but had not

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project website and docs
+    url: https://lidless.dev/mitre-mcp
+    about: Setup, tool reference, and usage notes live here. Browse there before filing.
+  - name: Security report
+    url: https://github.com/lidless-labs/mitre-mcp/security/policy
+    about: Do not file security issues publicly. See SECURITY.md for how to report privately.
+  - name: MITRE ATT&CK data questions
+    url: https://attack.mitre.org/
+    about: Questions about ATT&CK content itself (technique definitions, group attributions) belong to MITRE, not this server.

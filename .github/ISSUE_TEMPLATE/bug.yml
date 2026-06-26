@@ -1,0 +1,67 @@
+name: Bug report
+description: Something is broken in mitre-mcp, such as the MCP server, an ATT&CK tool, the STIX loader, a SOC integration, or the docs.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you ask the agent to do (or which tool ran), and what did you expect versus what you got?
+      placeholder: |
+        I asked the agent to map Wazuh rule 5710 to ATT&CK and got X.
+        I expected Y.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mitre-mcp version
+      description: The version field from package.json, or the npm version you installed.
+      placeholder: 2.0.1
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`.
+      placeholder: v20.11.0
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: Which client launched the server?
+      placeholder: Claude Code, Claude Desktop, OpenClaw, Hermes, Codex CLI, ...
+    validations:
+      required: true
+  - type: dropdown
+    id: soc
+    attributes:
+      label: SOC integrations involved
+      description: Were any optional SOC integrations configured for this run?
+      multiple: true
+      options:
+        - None (ATT&CK only)
+        - Wazuh
+        - TheHive
+        - Cortex
+        - MISP
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Full output
+      description: Paste the full stdout + stderr and any tool output. Keep enough for us to reproduce.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: scrub
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I have removed any private hostnames, IPs, tokens, API keys, or absolute paths from this report.
+          required: true

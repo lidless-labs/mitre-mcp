@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest a new ATT&CK tool, a SOC integration improvement, or another enhancement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem?
+      description: What are you trying to do with mitre-mcp that you cannot do today?
+      placeholder: |
+        I want my agent to pull a technique's detection guidance directly, but
+        there is no tool for it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What new tool, resource, prompt, or behavior would solve it? If it is a tool, what would the inputs and outputs look like?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core ATT&CK tools
+        - Campaign tools
+        - Navigator layer export
+        - Wazuh integration
+        - TheHive integration
+        - Cortex integration
+        - MISP integration
+        - Cross-stack correlation
+        - Resources / prompts
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing tools, workarounds, or other ways to get the same result.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      description: A new SOC integration (a fifth platform) or a breaking change to tool names or schemas needs a conversation first; see CONTRIBUTING.md.
+      options:
+        - label: I have read CONTRIBUTING.md and understand which changes need discussion before a PR.
+          required: true
