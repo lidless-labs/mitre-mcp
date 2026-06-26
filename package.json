@@ -21,11 +21,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/solomonneas/mitre-mcp.git"
+    "url": "https://github.com/lidless-labs/mitre-mcp.git"
   },
-  "homepage": "https://github.com/solomonneas/mitre-mcp#readme",
+  "homepage": "https://github.com/lidless-labs/mitre-mcp#readme",
   "bugs": {
-    "url": "https://github.com/solomonneas/mitre-mcp/issues"
+    "url": "https://github.com/lidless-labs/mitre-mcp/issues"
   },
   "keywords": [
     "mcp",
