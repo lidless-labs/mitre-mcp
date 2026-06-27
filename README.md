@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/mitre-mcp-banner.jpg" alt="Watercolor ATT&CK Navigator layer map for mitre-mcp" width="100%" />
+  <img src="docs/assets/mitre-mcp-banner.jpg" alt="mitre-mcp banner" width="900">
 </p>
 
 <h1 align="center">mitre-mcp</h1>
@@ -9,15 +9,15 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/mitre-mcp"><img src="https://img.shields.io/npm/v/mitre-mcp?style=for-the-badge&logo=npm&color=cb3837&label=npm" alt="npm version" /></a>
-  <a href="https://github.com/lidless-labs/mitre-mcp/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lidless-labs/mitre-mcp/ci.yml?branch=main&style=for-the-badge&label=CI&logo=github" alt="CI status" /></a>
-  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-server-6f42c1?style=for-the-badge" alt="MCP server" /></a>
-  <a href="https://attack.mitre.org/"><img src="https://img.shields.io/badge/MITRE-ATT%26CK-d04437?style=for-the-badge" alt="MITRE ATT&CK" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT license" /></a>
+  <a href="https://lidless.dev/mitre-mcp"><strong>Website &amp; docs &rarr; lidless.dev/mitre-mcp</strong></a>
 </p>
 
 <p align="center">
-  <a href="https://lidless.dev/mitre-mcp"><strong>Website &amp; docs &rarr; lidless.dev/mitre-mcp</strong></a>
+  <img src="https://img.shields.io/npm/v/mitre-mcp?style=for-the-badge&logo=npm&label=npm" alt="npm version" />
+  <img src="https://img.shields.io/github/actions/workflow/status/lidless-labs/mitre-mcp/ci.yml?branch=main&style=for-the-badge&label=ci" alt="CI status" />
+  <img src="https://img.shields.io/badge/MCP-server-8A2BE2?style=for-the-badge" alt="MCP server" />
+  <img src="https://img.shields.io/badge/MITRE-ATT%26CK-d04437?style=for-the-badge" alt="MITRE ATT&CK" />
+  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT license" />
 </p>
 
 mitre-mcp is an [MCP](https://modelcontextprotocol.io/) server for the [MITRE ATT&CK](https://attack.mitre.org/) knowledge base. It exists because asking an LLM about adversary techniques from memory gives you stale, hallucinated technique IDs, while a SOC analyst needs the real, versioned ATT&CK data and the alerts in front of them. Unlike a plain ATT&CK lookup tool, mitre-mcp ships ATT&CK querying and live SOC integration (Wazuh, TheHive, Cortex, MISP) in the same server, so an agent can map a real alert to a technique and correlate it across your stack without leaving the chat.
@@ -96,44 +96,6 @@ npm test          # optional: run the test suite
 ```
 
 Other clients (OpenClaw, Hermes, Codex CLI) are covered under [Other MCP clients](#other-mcp-clients).
-
-## Configuration
-
-### Core settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MITRE_DATA_DIR` | `~/.mitre-mcp/data` | Local cache directory for STIX bundles |
-| `MITRE_MATRICES` | `enterprise` | Comma-separated matrices: `enterprise`, `mobile`, `ics` |
-| `MITRE_UPDATE_INTERVAL` | `86400` | Auto-update check interval in seconds (default 24h) |
-
-### SOC integration (all optional)
-
-| Variable | Description |
-|----------|-------------|
-| `WAZUH_URL` | Wazuh API URL (e.g. `https://192.0.2.10:55000`) |
-| `WAZUH_USERNAME` | Wazuh API username (default: `wazuh-wui`) |
-| `WAZUH_PASSWORD` | Wazuh API password |
-| `WAZUH_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
-| `THEHIVE_URL` | TheHive URL (e.g. `http://192.0.2.10:9000`) |
-| `THEHIVE_API_KEY` | TheHive API key |
-| `CORTEX_URL` | Cortex URL (e.g. `http://192.0.2.10:9001`) |
-| `CORTEX_API_KEY` | Cortex API key |
-| `MISP_URL` | MISP URL (e.g. `https://192.0.2.10`) |
-| `MISP_API_KEY` | MISP API key (authkey) |
-| `MISP_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
-| `MITRE_SOC_ALLOW_WRITES` | Globally pre-authorize state-changing SOC tools (default: off). When unset, write tools run in dry-run mode unless the call passes `confirm: true`. Set to `true`/`1`/`yes` to allow writes without per-call confirmation. |
-
-### SOC write safety
-
-State-changing SOC tools (`mitre_misp_create_event`, `mitre_thehive_create_case`, and `mitre_cortex_run_analyzers`) default to a **dry run**: they return the action they *would* perform without touching the SOC platform. To actually execute, either:
-
-- pass `confirm: true` in the individual tool call, or
-- set `MITRE_SOC_ALLOW_WRITES=true` to pre-authorize all SOC writes for the session.
-
-`mitre_cortex_run_analyzers` is the highest-impact tool (it submits live analyzer jobs, including sandbox detonation, against the supplied observable), so confirm it deliberately. `mitre_thehive_enrich` keeps its existing `addTags` flag (default `false`, read-only analysis) as its write guard.
-
-When SSL verification is disabled (`*_VERIFY_SSL=false`), the relaxed TLS policy is scoped to each individual request and never disables certificate validation globally, so concurrent requests to other hosts remain protected. IDs supplied to SOC tools (event IDs, case IDs, agent IDs, data types) are validated against a strict allow-list and URL-encoded before being placed in API request paths.
 
 ## Tools
 
@@ -235,6 +197,44 @@ mitre-mcp registers **39 tools**, **3 resources**, and **4 prompts**. The 19 cor
 | `gap-analysis` | Perform detection gap analysis |
 | `attribution-analysis` | Assist with threat attribution |
 
+## Configuration
+
+### Core settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MITRE_DATA_DIR` | `~/.mitre-mcp/data` | Local cache directory for STIX bundles |
+| `MITRE_MATRICES` | `enterprise` | Comma-separated matrices: `enterprise`, `mobile`, `ics` |
+| `MITRE_UPDATE_INTERVAL` | `86400` | Auto-update check interval in seconds (default 24h) |
+
+### SOC integration (all optional)
+
+| Variable | Description |
+|----------|-------------|
+| `WAZUH_URL` | Wazuh API URL (e.g. `https://192.0.2.10:55000`) |
+| `WAZUH_USERNAME` | Wazuh API username (default: `wazuh-wui`) |
+| `WAZUH_PASSWORD` | Wazuh API password |
+| `WAZUH_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
+| `THEHIVE_URL` | TheHive URL (e.g. `http://192.0.2.10:9000`) |
+| `THEHIVE_API_KEY` | TheHive API key |
+| `CORTEX_URL` | Cortex URL (e.g. `http://192.0.2.10:9001`) |
+| `CORTEX_API_KEY` | Cortex API key |
+| `MISP_URL` | MISP URL (e.g. `https://192.0.2.10`) |
+| `MISP_API_KEY` | MISP API key (authkey) |
+| `MISP_VERIFY_SSL` | Verify SSL certs (default: `true`, set `false` for self-signed) |
+| `MITRE_SOC_ALLOW_WRITES` | Globally pre-authorize state-changing SOC tools (default: off). When unset, write tools run in dry-run mode unless the call passes `confirm: true`. Set to `true`/`1`/`yes` to allow writes without per-call confirmation. |
+
+### SOC write safety
+
+State-changing SOC tools (`mitre_misp_create_event`, `mitre_thehive_create_case`, and `mitre_cortex_run_analyzers`) default to a **dry run**: they return the action they *would* perform without touching the SOC platform. To actually execute, either:
+
+- pass `confirm: true` in the individual tool call, or
+- set `MITRE_SOC_ALLOW_WRITES=true` to pre-authorize all SOC writes for the session.
+
+`mitre_cortex_run_analyzers` is the highest-impact tool (it submits live analyzer jobs, including sandbox detonation, against the supplied observable), so confirm it deliberately. `mitre_thehive_enrich` keeps its existing `addTags` flag (default `false`, read-only analysis) as its write guard.
+
+When SSL verification is disabled (`*_VERIFY_SSL=false`), the relaxed TLS policy is scoped to each individual request and never disables certificate validation globally, so concurrent requests to other hosts remain protected. IDs supplied to SOC tools (event IDs, case IDs, agent IDs, data types) are validated against a strict allow-list and URL-encoded before being placed in API request paths.
+
 ## Examples
 
 Ask your agent in natural language; it picks the tool. A few that work out of the box:
@@ -259,21 +259,6 @@ Map Wazuh rule 5710 with groups ["sshd", "authentication_failed"]
 to ATT&CK techniques, then cross-correlate those techniques across
 Wazuh, TheHive, and MISP.
 ```
-
-## Why not something else?
-
-- **A plain "ask the LLM about ATT&CK" prompt** gives you confident, made-up technique IDs and last year's data. mitre-mcp serves the real, versioned STIX bundles MITRE publishes, cached locally and refreshable, so the technique IDs and relationships are correct.
-- **A generic ATT&CK API wrapper or the official `mitreattack-python` library** is a great data layer, but it stops at the data. mitre-mcp speaks MCP so any agent can call it, and it carries the analysis tools (alert mapping, coverage analysis, Navigator export, attribution) and the SOC integrations on top.
-- **Per-tool SOC plugins** (a Wazuh MCP here, a MISP MCP there) leave you wiring four servers and four mental models. mitre-mcp puts Wazuh, TheHive, Cortex, and MISP behind one ATT&CK-centric server with one correlation tool that spans all of them.
-- **A hosted threat-intel SaaS** sends your alerts to someone else's cloud. mitre-mcp runs on your machine, talks only to the SOC hosts you configure, and ships nothing to a third party.
-
-## What mitre-mcp is not
-
-- It is **not a SIEM or a replacement for Wazuh, TheHive, Cortex, or MISP**. It reads from and writes to them through their APIs; it does not store or index your events.
-- It is **not an autonomous responder**. State-changing SOC tools dry-run by default and require explicit `confirm: true` or `MITRE_SOC_ALLOW_WRITES=true` before they touch a platform.
-- It is **not a hosted service or a daemon**. It is a stdio MCP server your client launches on demand.
-- It does **not maintain the ATT&CK data itself**. The knowledge base is MITRE's; mitre-mcp downloads, parses, caches, and serves it.
-- It is **not a curated CTI feed**. It serves what MITRE publishes plus what your own SOC platforms contain.
 
 ## Other MCP clients
 
@@ -362,6 +347,21 @@ ATT&CK data is sourced from the official MITRE STIX 2.1 bundles:
 - **ICS ATT&CK**: Industrial control systems
 
 Data is downloaded on first run and cached locally. Set `MITRE_UPDATE_INTERVAL` to control how often the server checks for updates.
+
+## Why not something else?
+
+- **A plain "ask the LLM about ATT&CK" prompt** gives you confident, made-up technique IDs and last year's data. mitre-mcp serves the real, versioned STIX bundles MITRE publishes, cached locally and refreshable, so the technique IDs and relationships are correct.
+- **A generic ATT&CK API wrapper or the official `mitreattack-python` library** is a great data layer, but it stops at the data. mitre-mcp speaks MCP so any agent can call it, and it carries the analysis tools (alert mapping, coverage analysis, Navigator export, attribution) and the SOC integrations on top.
+- **Per-tool SOC plugins** (a Wazuh MCP here, a MISP MCP there) leave you wiring four servers and four mental models. mitre-mcp puts Wazuh, TheHive, Cortex, and MISP behind one ATT&CK-centric server with one correlation tool that spans all of them.
+- **A hosted threat-intel SaaS** sends your alerts to someone else's cloud. mitre-mcp runs on your machine, talks only to the SOC hosts you configure, and ships nothing to a third party.
+
+## What mitre-mcp is not
+
+- It is **not a SIEM or a replacement for Wazuh, TheHive, Cortex, or MISP**. It reads from and writes to them through their APIs; it does not store or index your events.
+- It is **not an autonomous responder**. State-changing SOC tools dry-run by default and require explicit `confirm: true` or `MITRE_SOC_ALLOW_WRITES=true` before they touch a platform.
+- It is **not a hosted service or a daemon**. It is a stdio MCP server your client launches on demand.
+- It does **not maintain the ATT&CK data itself**. The knowledge base is MITRE's; mitre-mcp downloads, parses, caches, and serves it.
+- It is **not a curated CTI feed**. It serves what MITRE publishes plus what your own SOC platforms contain.
 
 ## Contributing
 
