@@ -5,12 +5,13 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "mitre-mcp": "dist/index.js"
+    "attack": "dist/cli.js",
+    "mitre-mcp": "dist/mcp-bin.js"
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "start": "node dist/cli.js mcp",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",

@@ -235,6 +235,29 @@ State-changing SOC tools (`mitre_misp_create_event`, `mitre_thehive_create_case`
 
 When SSL verification is disabled (`*_VERIFY_SSL=false`), the relaxed TLS policy is scoped to each individual request and never disables certificate validation globally, so concurrent requests to other hosts remain protected. IDs supplied to SOC tools (event IDs, case IDs, agent IDs, data types) are validated against a strict allow-list and URL-encoded before being placed in API request paths.
 
+## CLI
+
+The same package ships a read-only **search tool**, `attack`, for shells, cron, and CI. It shares the local ATT&CK data core with the MCP server, so what the agent can look up, you can look up from a terminal. It exposes only read/lookup operations; data refresh and SOC correlation stay in the MCP server.
+
+```bash
+npx mitre-mcp@latest stats
+# or, installed globally:
+attack technique T1059          # one technique by ATT&CK id
+attack group APT29              # threat actor by id or name
+attack tactics                  # list all tactics
+attack search "powershell"      # search techniques (--type group|software|mitigation|campaign)
+attack mitigations-for T1059    # mitigations mapped to a technique
+attack software Cobalt Strike
+attack stats                    # ATT&CK data counts + version
+attack technique T1059 --json   # raw JSON for piping
+```
+
+Run `attack help` for the full command list. `--json` emits raw JSON instead of the concise summary. Exit codes: `0` success, `1` runtime error (data not loaded, or a lookup found nothing), `2` usage error (unknown command/flag or missing argument).
+
+### Starting the MCP server
+
+`attack mcp` (or the back-compat `mitre-mcp` bin) starts the stdio MCP server. If a launcher referenced the file path `dist/index.js` directly, point it at `dist/mcp-bin.js` (or `dist/cli.js mcp`); launchers that use the `mitre-mcp` bin name need no change.
+
 ## Examples
 
 Ask your agent in natural language; it picks the tool. A few that work out of the box:
