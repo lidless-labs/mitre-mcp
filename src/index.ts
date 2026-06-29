@@ -27,7 +27,7 @@ import {
 } from "./soc/index.js";
 import pkg from "../package.json";
 
-async function main(): Promise<void> {
+export async function serve(): Promise<void> {
   const config = loadConfig();
 
   const server = new McpServer({
@@ -133,7 +133,3 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
