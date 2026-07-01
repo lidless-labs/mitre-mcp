@@ -13,11 +13,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/npm/v/mitre-mcp?style=for-the-badge&logo=npm&label=npm" alt="npm version" />
-  <img src="https://img.shields.io/github/actions/workflow/status/lidless-labs/mitre-mcp/ci.yml?branch=main&style=for-the-badge&label=ci" alt="CI status" />
-  <img src="https://img.shields.io/badge/MCP-server-8A2BE2?style=for-the-badge" alt="MCP server" />
-  <img src="https://img.shields.io/badge/MITRE-ATT%26CK-d04437?style=for-the-badge" alt="MITRE ATT&CK" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT license" />
+  <img src="https://shieldcn.dev/npm/mitre-mcp.svg" alt="npm version" />
+  <img src="https://shieldcn.dev/github/ci/lidless-labs/mitre-mcp.svg?branch=main&workflow=ci.yml" alt="CI status" />
+  <img src="https://shieldcn.dev/badge/MCP-server-8A2BE2.svg" alt="MCP server" />
+  <img src="https://shieldcn.dev/badge/MITRE-ATT%26CK-d04437.svg" alt="MITRE ATT&CK" />
+  <img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="MIT license" />
 </p>
 
 mitre-mcp is an [MCP](https://modelcontextprotocol.io/) server for the [MITRE ATT&CK](https://attack.mitre.org/) knowledge base. It exists because asking an LLM about adversary techniques from memory gives you stale, hallucinated technique IDs, while a SOC analyst needs the real, versioned ATT&CK data and the alerts in front of them. Unlike a plain ATT&CK lookup tool, mitre-mcp ships ATT&CK querying and live SOC integration (Wazuh, TheHive, Cortex, MISP) in the same server, so an agent can map a real alert to a technique and correlate it across your stack without leaving the chat.
