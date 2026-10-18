@@ -397,8 +397,10 @@ Run one built server for multiple MCP clients:
 node dist/mcp-bin.js --http
 ```
 
-Without `--http`, the existing stdio entry point keeps its behavior. HTTP mode
-uses the same `MITRE_DATA_DIR`, `MITRE_MATRICES`, update interval, and optional
+Without `--http`, the stdio protocol and launch behavior are unchanged. In both
+modes, `mitre_update_data` now coalesces concurrent refreshes into one download
+and swaps in a complete replacement snapshot, so records removed upstream also
+disappear locally. HTTP mode uses the same `MITRE_DATA_DIR`, `MITRE_MATRICES`, update interval, and optional
 SOC environment configuration.
 
 Set `MITRE_MCP_HTTP_TOKEN` to an independent random credential, for example one
