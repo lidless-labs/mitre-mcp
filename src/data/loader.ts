@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { MatrixType, StixBundle } from "../types.js";
 
@@ -53,23 +54,39 @@ export function hasCachedData(
   return matrices.every((m) => existsSync(getCachePath(dataDir, m)));
 }
 
-export async function downloadMatrix(
-  dataDir: string,
-  matrix: MatrixType,
-): Promise<StixBundle> {
-  const url = STIX_URLS[matrix];
-  const response = await fetch(url);
-
+async function fetchMatrix(matrix: MatrixType): Promise<StixBundle> {
+  const response = await fetch(STIX_URLS[matrix]);
   if (!response.ok) {
-    throw new Error(
-      `Failed to download ${matrix} ATT&CK data: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Failed to download ${matrix} ATT&CK data: ${response.status} ${response.statusText}`);
   }
-
   const data = (await response.json()) as StixBundle;
-  ensureDataDir(dataDir);
-  writeFileSync(getCachePath(dataDir, matrix), JSON.stringify(data));
+  if (data.type !== "bundle" || !Array.isArray(data.objects)) {
+    throw new Error(`Invalid ${matrix} ATT&CK bundle`);
+  }
+  return data;
+}
 
+// Stage complete files beside their destination for atomic same-filesystem
+// rename. No live file is truncated, and no asynchronous read can interleave
+// with publication of the complete set within this process.
+function publish(dataDir: string, files: [string, string][]): void {
+  ensureDataDir(dataDir);
+  const staged: [string, string][] = [];
+  try {
+    for (const [destination, contents] of files) {
+      const temporary = `${destination}.${randomUUID()}.tmp`;
+      staged.push([temporary, destination]);
+      writeFileSync(temporary, contents, { flag: "wx", mode: 0o600 });
+    }
+    for (const [temporary, destination] of staged) renameSync(temporary, destination);
+  } finally {
+    for (const [temporary] of staged) rmSync(temporary, { force: true });
+  }
+}
+
+export async function downloadMatrix(dataDir: string, matrix: MatrixType): Promise<StixBundle> {
+  const data = await fetchMatrix(matrix);
+  publish(dataDir, [[getCachePath(dataDir, matrix), JSON.stringify(data)]]);
   return data;
 }
 
@@ -77,20 +94,17 @@ export async function downloadAllMatrices(
   dataDir: string,
   matrices: MatrixType[],
 ): Promise<Map<MatrixType, StixBundle>> {
-  ensureDataDir(dataDir);
   const bundles = new Map<MatrixType, StixBundle>();
-
-  for (const matrix of matrices) {
-    const bundle = await downloadMatrix(dataDir, matrix);
-    bundles.set(matrix, bundle);
-  }
-
+  // Finish every download before touching the live cache.
+  for (const matrix of matrices) bundles.set(matrix, await fetchMatrix(matrix));
   const meta: CacheMetadata = {
     lastUpdated: new Date().toISOString(),
     matrices: matrices as string[],
   };
-  writeFileSync(getMetadataPath(dataDir), JSON.stringify(meta, null, 2));
-
+  publish(dataDir, [
+    ...[...bundles].map(([matrix, bundle]): [string, string] => [getCachePath(dataDir, matrix), JSON.stringify(bundle)]),
+    [getMetadataPath(dataDir), JSON.stringify(meta, null, 2)],
+  ]);
   return bundles;
 }
 

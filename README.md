@@ -385,9 +385,118 @@ Data is downloaded on first run and cached locally. Set `MITRE_UPDATE_INTERVAL` 
 
 - It is **not a SIEM or a replacement for Wazuh, TheHive, Cortex, or MISP**. It reads from and writes to them through their APIs; it does not store or index your events.
 - It is **not an autonomous responder**. State-changing SOC tools dry-run by default and require explicit `confirm: true` or `MITRE_SOC_ALLOW_WRITES=true` before they touch a platform.
-- It is **not a hosted service or a daemon**. It is a stdio MCP server your client launches on demand.
+- It supports client-launched stdio and an optional shared HTTP process. Hosting and service management remain the operator's responsibility.
 - It does **not maintain the ATT&CK data itself**. The knowledge base is MITRE's; mitre-mcp downloads, parses, caches, and serves it.
 - It is **not a curated CTI feed**. It serves what MITRE publishes plus what your own SOC platforms contain.
+
+## HTTP mode
+
+Run one built server for multiple MCP clients:
+
+```sh
+node dist/mcp-bin.js --http
+```
+
+Without `--http`, the existing stdio entry point keeps its behavior. HTTP mode
+uses the same `MITRE_DATA_DIR`, `MITRE_MATRICES`, update interval, and optional
+SOC environment configuration.
+
+Set `MITRE_MCP_HTTP_TOKEN` to an independent random credential, for example one
+created with `openssl rand -hex 32`. Startup refuses blank tokens and tokens
+matching configured SOC usernames, passwords, API keys, URL credentials, or Wazuh
+Basic authentication values. Token comparison uses SHA-256 digests and constant
+time comparison. The HTTP token grants access to every configured tool, including
+dataset updates and SOC tools. All clients share the operator's upstream accounts
+and `MITRE_SOC_ALLOW_WRITES` setting.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MITRE_MCP_HTTP_TOKEN` | Required | Independent bearer credential |
+| `MITRE_MCP_HTTP_HOST` | IPv4 loopback | Listener address |
+| `MITRE_MCP_HTTP_PORT` | `3114` | TCP port (`0` selects a free port) |
+
+The resolved URL is printed to stderr. `/mcp` supports authenticated Streamable
+HTTP POST, GET, and DELETE requests. Unauthenticated `GET /healthz` returns only
+`{"status":"ok"}`. Host and Origin validation runs before authentication.
+Requests need the bound host or a loopback alias in `Host`. A supplied `Origin`
+must be an HTTP or HTTPS loopback origin. Bodies are limited to 1 MiB, including
+chunked requests. Request and header timeouts are 30 and 10 seconds. The listener
+allows 128 sessions and reaps sessions idle for 30 minutes on a minute timer.
+Active tool calls prevent idle expiry. An open SSE channel does not. SIGTERM and
+SIGINT close the sessions and listener. Clients reinitialize after expiry or restart.
+
+Each session owns its MCP server and SOC clients, including its Wazuh token cache.
+There are no deferred tool sets, pending approvals, or client-controlled global
+write flags. SOC write confirmation is checked on every call, so one confirmed
+call cannot authorize another call or session. The environment write flag is an
+operator setting shared by all clients with the HTTP token.
+
+One ATT&CK store is initialized before the listener opens and shared by all
+sessions. Concurrent `mitre_update_data` calls join one in-flight refresh. Reads
+continue against the previous index during downloads. Downloads finish before
+cache files are staged, then each complete file is atomically renamed into place.
+Publication is synchronous within the process. Index parsing builds a replacement
+snapshot before a synchronous swap, removing obsolete objects and relationships.
+Failed downloads leave the prior cache and index available. Failed parsing leaves
+the prior in-memory index available. Separate server processes should use separate
+cache directories: publication across several files is not a cross-process transaction.
+
+Keep the loopback binding for local clients. Remote access needs a trusted TLS
+proxy or tunnel and network access controls. This listener supplies no TLS, OAuth,
+CORS access, or separate client identities. Preserve an allowed Host header at the
+proxy. A wildcard bind does not allow arbitrary Host headers.
+
+### Claude Code
+
+Use a headers helper that reads the token from your approved secret store or
+inherited environment and prints only `{"Authorization":"Bearer ..."}` to stdout:
+
+```json
+{
+  "mcpServers": {
+    "mitre": {
+      "type": "http",
+      "url": "http://localhost:3114/mcp",
+      "headersHelper": "/path/to/helper MITRE_MCP_HTTP_TOKEN"
+    }
+  }
+}
+```
+
+A helper using the inherited environment can print the header with Node:
+
+```js
+#!/usr/bin/env node
+const token = process.env[process.argv[2]];
+if (!token) process.exit(1);
+process.stdout.write(JSON.stringify({ Authorization: `Bearer ${token}` }));
+```
+
+Make the helper executable and restrict access to its environment. Keep the
+credential out of client configuration and logs.
+
+### Codex
+
+Export `MITRE_MCP_HTTP_TOKEN` in the environment launching Codex, then configure
+its Streamable HTTP connection:
+
+```toml
+[mcp_servers.mitre]
+url = "http://localhost:3114/mcp"
+bearer_token_env_var = "MITRE_MCP_HTTP_TOKEN"
+```
+
+The client token must match the server token without the `Bearer ` prefix.
+Clients need no upstream SOC credentials.
+
+### systemd user service
+
+See [`docs/systemd/mitre-mcp-http.service`](docs/systemd/mitre-mcp-http.service).
+Adjust its generic installation paths and build the project there. Create the
+EnvironmentFile at `%h/.config/mitre-mcp/http.env` with mode `0600`, containing
+`MITRE_MCP_HTTP_TOKEN`, optional listener settings, and any desired dataset or SOC
+configuration. The unit uses `NoNewPrivileges=true`, `PrivateTmp=true`, and
+`UMask=0077`. The example does not install or enable the service.
 
 ## Contributing
 

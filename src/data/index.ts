@@ -56,6 +56,7 @@ export class AttackDataStore {
 
   private config: MitreConfig;
   private loaded = false;
+  private refreshPromise: Promise<void> | undefined;
 
   constructor(config: MitreConfig) {
     this.config = config;
@@ -83,17 +84,43 @@ export class AttackDataStore {
       }
     }
 
-    for (const [, bundle] of bundles) {
-      this.indexBundle(bundle);
-    }
+    this.loadFromBundles(bundles);
+  }
 
-    this.loaded = true;
+  // Every session uses this same promise and continues reading the old snapshot
+  // while downloads are pending. A failed update is retryable on the next call.
+  refresh(): Promise<void> {
+    this.refreshPromise ??= downloadAllMatrices(this.config.dataDir, this.config.matrices)
+      .then((bundles) => { this.loadFromBundles(bundles); })
+      .finally(() => { this.refreshPromise = undefined; });
+    return this.refreshPromise;
   }
 
   loadFromBundles(bundles: Map<MatrixType, StixBundle>): void {
-    for (const [, bundle] of bundles) {
-      this.indexBundle(bundle);
-    }
+    const next = new AttackDataStore(this.config);
+    for (const [, bundle] of bundles) next.indexBundle(bundle);
+    // Parsing completes before replacement. This synchronous section cannot
+    // interleave with another request on the Node event loop.
+    this.techniques = next.techniques;
+    this.techniquesByStixId = next.techniquesByStixId;
+    this.tactics = next.tactics;
+    this.tacticsByShortName = next.tacticsByShortName;
+    this.groups = next.groups;
+    this.groupsByStixId = next.groupsByStixId;
+    this.groupsByName = next.groupsByName;
+    this.software = next.software;
+    this.softwareByStixId = next.softwareByStixId;
+    this.softwareByName = next.softwareByName;
+    this.mitigations = next.mitigations;
+    this.mitigationsByStixId = next.mitigationsByStixId;
+    this.dataSources = next.dataSources;
+    this.dataSourcesByStixId = next.dataSourcesByStixId;
+    this.dataSourcesByName = next.dataSourcesByName;
+    this.campaigns = next.campaigns;
+    this.campaignsByStixId = next.campaignsByStixId;
+    this.campaignsByName = next.campaignsByName;
+    this.dataComponents = next.dataComponents;
+    this.relationships = next.relationships;
     this.loaded = true;
   }
 

@@ -1,0 +1,21 @@
+[Unit]
+Description=MITRE ATT&CK MCP HTTP server
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mitre-mcp
+ExecStart=/usr/bin/node /opt/mitre-mcp/dist/mcp-bin.js --http
+# Create this file with mode 0600 before starting the unit.
+EnvironmentFile=%h/.config/mitre-mcp/http.env
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

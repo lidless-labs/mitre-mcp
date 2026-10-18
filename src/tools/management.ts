@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AttackDataStore } from "../data/index.js";
 import type { MitreConfig } from "../types.js";
-import { downloadAllMatrices, getLastUpdated } from "../data/loader.js";
+import { getLastUpdated } from "../data/loader.js";
 
 export function registerManagementTools(
   server: McpServer,
@@ -14,11 +14,7 @@ export function registerManagementTools(
     {},
     async () => {
       try {
-        const bundles = await downloadAllMatrices(
-          config.dataDir,
-          config.matrices,
-        );
-        store.loadFromBundles(bundles);
+        await store.refresh();
 
         const stats = store.getStats();
         return {
