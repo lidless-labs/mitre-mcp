@@ -131,8 +131,23 @@ describe("authenticated Streamable HTTP", () => {
   it("refuses upstream URL and Basic credentials", async () => {
     configure({ WAZUH_URL: `https://reader:${TOKEN}@soc.example.com` });
     await expect(createHttpServer()).rejects.toThrow(/MITRE_MCP_HTTP_TOKEN/);
-    configure({ WAZUH_URL: "https://soc.example.com", WAZUH_USERNAME: "reader", WAZUH_PASSWORD: "test-password", MITRE_MCP_HTTP_TOKEN: Buffer.from("reader:test-password").toString("base64") });
+    configure({ WAZUH_URL: "https://soc.example.com", WAZUH_USERNAME: "reader", WAZUH_PASSWORD: "test-password-at-least-32-characters", MITRE_MCP_HTTP_TOKEN: Buffer.from("reader:test-password-at-least-32-characters").toString("base64") });
     await expect(createHttpServer()).rejects.toThrow(/MITRE_MCP_HTTP_TOKEN/);
+  });
+
+  it("refuses a token shorter than 32 characters", async () => {
+    configure({ MITRE_MCP_HTTP_TOKEN: "a".repeat(31) });
+    await expect(createHttpServer()).rejects.toThrow(/at least 32 characters/);
+  });
+
+  it.each(["0.0.0.0", "::", "[::]"])("refuses wildcard bind host %s", async (host) => {
+    await expect(start({ MITRE_MCP_HTTP_HOST: host })).rejects.toThrow(/not a wildcard/);
+  });
+
+  it("accepts a token with surrounding whitespace from a secrets file", async () => {
+    const url = await start({ MITRE_MCP_HTTP_TOKEN: `  ${TOKEN}\n` });
+    const { client } = await connect(url);
+    expect((await client.listTools()).tools.some((tool) => tool.name === "mitre_data_version")).toBe(true);
   });
 
   it.each(["-1", "65536", "abc", "3000suffix", "1.5"])("refuses invalid port %s", async (port) => {

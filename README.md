@@ -413,8 +413,8 @@ and `MITRE_SOC_ALLOW_WRITES` setting.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MITRE_MCP_HTTP_TOKEN` | Required | Independent bearer credential |
-| `MITRE_MCP_HTTP_HOST` | IPv4 loopback | Listener address |
+| `MITRE_MCP_HTTP_TOKEN` | Required | Independent bearer credential, at least 32 characters |
+| `MITRE_MCP_HTTP_HOST` | IPv4 loopback | Specific listener address; wildcard addresses are refused |
 | `MITRE_MCP_HTTP_PORT` | `3114` | TCP port (`0` selects a free port) |
 
 The resolved URL is printed to stderr. `/mcp` supports authenticated Streamable
