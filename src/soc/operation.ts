@@ -30,6 +30,13 @@ async function privateDirectory(path: string): Promise<void> {
     const sticky = stat.mode & 0o1000;
     if (!stat.isDirectory() || stat.isSymbolicLink() || !trustedOwner || (writable && !sticky)) throw new Error();
   }
+  // Persist every directory entry up to the filesystem root. An existing
+  // entry may have just been created by a concurrent same-user mkdir winner,
+  // or survived a prior failed sync. Receipt fsync alone cannot publish it.
+  for (let p = path; ; p = dirname(p)) {
+    await syncDirectory(dirname(p));
+    if (dirname(p) === p) break;
+  }
 }
 async function syncDirectory(path: string): Promise<void> { const f = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); try { await f.sync(); } finally { await f.close(); } }
 async function read(path: string): Promise<unknown> {

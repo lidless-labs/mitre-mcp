@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, readdir, readFile, symlink, chmod, open, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../src/index.js";
@@ -10,7 +10,7 @@ import { MispClient, TheHiveClient, CortexClient } from "../src/soc/client.js";
 import type { MitreConfig } from "../src/types.js";
 vi.mock("node:fs/promises", async importOriginal => {
   const original = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...original, open: vi.fn(original.open) };
+  return { ...original, open: vi.fn(original.open), mkdir: vi.fn(original.mkdir) };
 });
 let client: Client, server: ReturnType<typeof createMcpServer>, state: string, store: AttackDataStore;
 async function connect(config: MitreConfig) {
@@ -32,6 +32,7 @@ beforeEach(async () => {
   vi.stubEnv("MITRE_SOC_STATE_DIR", state); vi.stubEnv("MITRE_SOC_ALLOW_WRITES", "false");
   store = new AttackDataStore(config);
   vi.mocked(open).mockImplementation((await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")).open);
+  vi.mocked(mkdir).mockImplementation((await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")).mkdir);
   store.loadFromBundles(new Map([["enterprise", { type: "bundle", id: "bundle--test", objects: [{ type: "attack-pattern", id: "attack-pattern--test", name: "Command", external_references: [{ source_name: "mitre-attack", external_id: "T1059" }], kill_chain_phases: [{ kill_chain_name: "mitre-attack", phase_name: "execution" }] }] }]]));
   for (const { cls } of lanes) vi.spyOn(cls.prototype, "request").mockImplementation(async (method) => ({ ok: true, data: method === "GET" ? [{ id: "a", name: "A" }, { id: "b", name: "B" }] : { id: "job-1", _id: "case-1", Event: { id: "1", uuid: "uuid-1" } } }) as never);
   await connect(config);
@@ -123,4 +124,49 @@ it("rejects relative state paths rather than changing operation identity with th
   vi.stubEnv("MITRE_SOC_STATE_DIR", relative(process.cwd(), state));
   expect((await call(lanes[0])).isError).toBe(true);
   expect(MispClient.prototype.request).not.toHaveBeenCalled(); expect(await readdir(state)).toEqual([]);
+});
+
+it.each([false, true])("persists the full directory ancestry before POST (mkdir EEXIST race: %s)", async race => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  const root = join(state, "new-parent", "new-root");
+  vi.stubEnv("MITRE_SOC_STATE_DIR", root);
+  const events: string[] = [];
+  vi.mocked(mkdir).mockImplementation(async (...args) => {
+    const result = await actual.mkdir(...args);
+    events.push(`mkdir:${args[0]}`);
+    // Model another same-user process winning mkdir, before persisting its parent.
+    if (race) throw Object.assign(new Error("exists"), { code: "EEXIST" });
+    return result;
+  });
+  vi.mocked(open).mockImplementation(async (...args) => {
+    const handle = await actual.open(...args);
+    const sync = handle.sync.bind(handle);
+    vi.spyOn(handle, "sync").mockImplementation(async () => { await sync(); events.push(`sync:${args[0]}`); });
+    return handle;
+  });
+  const request = vi.mocked(MispClient.prototype.request).getMockImplementation()!;
+  vi.mocked(MispClient.prototype.request).mockImplementation(async (...args) => { events.push("POST"); return request(...args); });
+  expect((await call(lanes[0])).isError).not.toBe(true);
+  const beforePost = events.slice(0, events.indexOf("POST"));
+  const [operationId] = await readdir(root);
+  for (let path = join(root, operationId); ; path = dirname(path)) {
+    const parent = dirname(path);
+    expect(beforePost).toContain(`sync:${parent}`);
+    if (beforePost.includes(`mkdir:${path}`)) expect(beforePost.lastIndexOf(`sync:${parent}`)).toBeGreaterThan(beforePost.indexOf(`mkdir:${path}`));
+    if (parent === path) break;
+  }
+});
+
+it.each(["ancestor", "root-parent", "operation-parent"])("directory sync failure at %s prevents every remote write", async level => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  const root = join(state, "new-parent", "new-root");
+  vi.stubEnv("MITRE_SOC_STATE_DIR", root);
+  const fault = level === "ancestor" ? state : level === "root-parent" ? dirname(root) : root;
+  vi.mocked(open).mockImplementation(async (...args) => {
+    const handle = await actual.open(...args);
+    if (String(args[0]) === fault) vi.spyOn(handle, "sync").mockRejectedValue(Object.assign(new Error("unsupported directory sync"), { code: "EINVAL" }));
+    return handle;
+  });
+  expect((await call(lanes[0])).isError).toBe(true);
+  expect(MispClient.prototype.request).not.toHaveBeenCalled();
 });
