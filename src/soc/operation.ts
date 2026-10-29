@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open } from "node:fs/promises";
+import { lstat, mkdir, open, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { SocResponse } from "./client.js";
@@ -44,7 +44,11 @@ async function read(path: string): Promise<unknown> {
   try {
     const s = await f.stat();
     if (!s.isFile() || s.uid !== process.getuid?.() || (s.mode & 0o077) || s.size > 16_384) throw new Error();
-    return JSON.parse(await f.readFile("utf8"));
+    const data = JSON.parse(await f.readFile("utf8"));
+    // An earlier writer may have failed between writing and syncing this file.
+    await f.sync();
+    await syncDirectory(dirname(path));
+    return data;
   } finally { await f.close(); }
 }
 // Exclusive files are immutable. A crash during creation leaves a receipt that
@@ -65,58 +69,130 @@ function ids(data: unknown): Record<string, unknown> | undefined {
   if (source.Event) result.Event = ids(source.Event);
   return result;
 }
+export interface OperationMutation { route: string; body?: unknown }
+interface KnownStep { step: number; data?: ReturnType<typeof ids>; targetId?: string }
+const MAX_STEPS = 1000;
+const validHash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+
 export async function operationClient(
   client: { operationScope: string; request<T>(method: string, path: string, body?: unknown): Promise<SocResponse<T>> },
   workflow: string, operationKey: string | undefined, payload: unknown,
-): Promise<{ operationId: string; finish(): Promise<void>; request<T>(method: string, path: string, body?: unknown): Promise<SocResponse<T>> }> {
+) {
   if (!operationKey || !/^[A-Za-z0-9._~-]{1,128}$/.test(operationKey)) throw new OperationError("Actual writes require a stable operationKey (1-128 letters, digits, . _ ~ -). Reuse it for retries.");
   const operationId = hash([client.operationScope, workflow, operationKey]);
-  const fail = (reason: string) => new OperationError(`Operation ${operationKey} (${operationId}): ${reason}. Inspect the private receipt and remote state with read tools. Do not retry with a new key or delete receipts to bypass this block.`);
+  const knownSteps: KnownStep[] = [];
+  const fail = (reason: string) => new OperationError(`Operation ${operationKey} (${operationId}): ${reason}. Known completed step IDs: ${JSON.stringify(knownSteps).slice(0, 12_000)}. Full IDs remain in the private receipts. Inspect the private receipt and remote state with read tools. Do not retry with a new key or delete receipts to bypass this block.`);
   let path: string;
+  let record: { fingerprint: string; version?: number; date?: string };
   try {
     const configuredRoot = process.env.MITRE_SOC_STATE_DIR;
     if (configuredRoot && !isAbsolute(configuredRoot)) throw new Error();
     const root = resolve(configuredRoot || join(homedir(), ".mitre-mcp", "operations"));
     await privateDirectory(root); path = join(root, operationId); await privateDirectory(path);
     const fingerprint = hash(payload);
-    const created = await exclusive(join(path, "operation.json"), { fingerprint });
-    if (!created && (await read(join(path, "operation.json")) as { fingerprint: string }).fingerprint !== fingerprint) throw fail("key payload mismatch");
+    await exclusive(join(path, "operation.json"), { fingerprint, version: 2, date: new Date().toISOString().split("T")[0] });
+    record = await read(join(path, "operation.json")) as typeof record;
+    if (record.fingerprint !== fingerprint) throw fail("key payload mismatch");
   } catch (e) { if (e instanceof OperationError) throw e; throw fail("private operation state unavailable or unsafe"); }
   let completedSteps: number | undefined;
   try {
     completedSteps = (await read(join(path, "complete.json")) as { steps: number }).steps;
-    if (!Number.isSafeInteger(completedSteps) || completedSteps! < 0) throw new Error();
+    if (!Number.isSafeInteger(completedSteps) || completedSteps! < 0 || completedSteps! > MAX_STEPS) throw new Error();
   }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw fail("invalid completion receipt"); }
-  let step = 0;
-  return { operationId, async finish() {
-    if (completedSteps !== undefined && completedSteps !== step) throw fail("completed step plan mismatch");
-    try {
-      if (!await exclusive(join(path, "complete.json"), { steps: step })
-        && (await read(join(path, "complete.json")) as { steps: number }).steps !== step) throw new Error();
+  let intentSteps: number[] = [];
+  try {
+    const entries = await readdir(path);
+    intentSteps = entries.filter(name => /^(0|[1-9][0-9]*)\.intent\.json$/.test(name)).map(name => Number(name.split(".")[0]));
+    if (intentSteps.length > MAX_STEPS || intentSteps.some(step => !Number.isSafeInteger(step) || step >= MAX_STEPS)) throw new Error();
+    const steps = entries.filter(name => /^(0|[1-9][0-9]*)\.done\.json$/.test(name)).map(name => Number(name.split(".")[0])).sort((a, b) => a - b);
+    if (steps.length > MAX_STEPS) throw new Error();
+    for (const step of steps) {
+      if (!Number.isSafeInteger(step) || step >= MAX_STEPS) throw new Error();
+      const prefix = join(path, String(step));
+      const intent = await read(prefix + ".intent.json") as { fingerprint: string };
+      const receipt = await read(prefix + ".done.json") as { fingerprint: string; data?: unknown; targetId?: string };
+      if (!validHash(intent.fingerprint) || receipt.fingerprint !== intent.fingerprint
+        || JSON.stringify(receipt.data) !== JSON.stringify(ids(receipt.data))
+        || (receipt.targetId !== undefined && !/^[A-Za-z0-9._~-]{1,256}$/.test(receipt.targetId))) throw new Error();
+      knownSteps.push({ step, data: ids(receipt.data), targetId: receipt.targetId });
     }
-    catch { throw fail("completion receipt unavailable"); }
-  }, async request<T>(method: string, route: string, body?: unknown): Promise<SocResponse<T>> {
-    if (completedSteps !== undefined && step >= completedSteps) throw fail("completed step plan mismatch");
-    const prefix = join(path, String(step++));
-    const fingerprint = hash([method, route, body]);
+    if (completedSteps !== undefined && (knownSteps.length !== completedSteps || intentSteps.length !== completedSteps || knownSteps.some((s, i) => s.step !== i))) throw new Error();
+  } catch { throw fail("invalid step receipts"); }
+  // Older journals have sufficient receipts to report a completed operation,
+  // but cannot authorize a partial retry under a plan they never recorded.
+  if (completedSteps === undefined && (record.version !== 2 || !record.date || !/^\d{4}-\d{2}-\d{2}$/.test(record.date))) throw fail("blocked recovery: no immutable plan metadata");
+  if (completedSteps === undefined) {
+    let plan: { fingerprint: string; steps: number } | undefined;
     try {
-      const owner = await exclusive(prefix + ".intent.json", { fingerprint });
-      if (!owner) {
-        if ((await read(prefix + ".intent.json") as { fingerprint: string }).fingerprint !== fingerprint) throw fail("step payload mismatch");
-        const receipt = await read(prefix + ".done.json") as { fingerprint: string; data?: T };
-        if (receipt.fingerprint !== fingerprint) throw fail("receipt mismatch");
-        return { ok: true, data: receipt.data };
+      plan = await read(join(path, "plan.json")) as typeof plan;
+      if (!plan || !validHash(plan.fingerprint) || !Number.isSafeInteger(plan.steps) || plan.steps < 0 || plan.steps > MAX_STEPS
+        || intentSteps.some(step => step >= plan!.steps)) throw new Error();
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw fail("immutable plan unavailable or unsafe");
+      if (intentSteps.length) throw fail("blocked recovery: immutable plan missing for recorded intents");
+    }
+    // A crash or disk-full error may prevent the final marker. The sealed plan
+    // and a successful receipt for every planned intent already prove the
+    // original sequence finished, without consulting mutable enrichment.
+    if (plan && knownSteps.length === plan.steps && knownSteps.every((s, i) => s.step === i)) completedSteps = plan.steps;
+  }
+  let started = false;
+  return { operationId, date: record.date,
+    error: (error?: unknown) => error instanceof OperationError ? error : fail("blocked recovery: immutable plan or local processing unavailable"),
+    completed: completedSteps === undefined ? undefined : { operationId, completed: true, knownSteps },
+    async run(
+      mutations: OperationMutation[],
+      parentSegment?: (first: Record<string, unknown>) => string,
+    ): Promise<Array<SocResponse<Record<string, unknown>>>> {
+      if (started || completedSteps !== undefined) throw fail("operation already completed or running");
+      started = true;
+      // Only hashes and a bounded count reach disk. The caller's raw payload,
+      // request bodies and ATT&CK enrichment remain in memory.
+      const plan = { fingerprint: hash(mutations), steps: mutations.length };
+      try {
+        if (mutations.length > MAX_STEPS) throw new Error();
+        await exclusive(join(path, "plan.json"), plan);
+        const recorded = await read(join(path, "plan.json")) as typeof plan;
+        if (recorded.fingerprint !== plan.fingerprint || recorded.steps !== plan.steps) throw fail("blocked recovery: immutable step plan changed");
+      } catch (e) { if (e instanceof OperationError) throw e; throw fail("immutable plan unavailable or unsafe"); }
+      const responses: Array<SocResponse<Record<string, unknown>>> = [];
+      for (const [step, mutation] of mutations.entries()) {
+        let route = mutation.route;
+        if (route.includes("{id}")) {
+          // Tool binders use util.safePathSegment on the retained parent ID.
+          if (!parentSegment || !responses[0]?.data) throw fail("invalid parent identifier");
+          route = route.replace("{id}", parentSegment(responses[0].data));
+        }
+        const prefix = join(path, String(step));
+        const fingerprint = hash(["POST", route, mutation.body]);
+        try {
+          const owner = await exclusive(prefix + ".intent.json", { fingerprint });
+          if (!owner) {
+            if ((await read(prefix + ".intent.json") as { fingerprint: string }).fingerprint !== fingerprint) throw fail("step payload mismatch");
+            const receipt = await read(prefix + ".done.json") as { fingerprint: string; data?: Record<string, unknown> };
+            if (receipt.fingerprint !== fingerprint) throw fail("receipt mismatch");
+            responses.push({ ok: true, data: receipt.data });
+            continue;
+          }
+          const response = await client.request("POST", route, mutation.body);
+          if (!response.ok) throw fail("uncertain remote outcome");
+          const data = ids(response.data);
+          if ((route === "/events/add" && !(data?.Event as Record<string, unknown>)?.id)
+            || (route === "/api/v1/case" && !data?._id)
+            || (route.endsWith("/run") && !data?.id)) throw fail("uncertain remote identifier");
+          const targetId = route.match(/^\/api\/analyzer\/([A-Za-z0-9._~-]{1,256})\/run$/)?.[1];
+          if (!await exclusive(prefix + ".done.json", { fingerprint, data, targetId })) throw fail("unexpected completion receipt");
+          knownSteps.push({ step, data, targetId });
+          // Both first run and replay use the same minimal ID projection.
+          responses.push({ ok: true, data });
+        } catch (e) { if (e instanceof OperationError) throw e; throw fail("uncertain or in-progress step outcome"); }
       }
-      const response = await client.request<T>(method, route, body);
-      if (!response.ok) throw fail("uncertain remote outcome");
-      const data = ids(response.data);
-      if ((route === "/events/add" && !(data?.Event as Record<string, unknown>)?.id)
-        || (route === "/api/v1/case" && !data?._id)
-        || (route.endsWith("/run") && !data?.id)) throw fail("uncertain remote identifier");
-      if (!await exclusive(prefix + ".done.json", { fingerprint, data })) throw fail("unexpected completion receipt");
-      // Both first run and replay use the same minimal ID projection.
-      return { ok: true, data: data as T };
-    } catch (e) { if (e instanceof OperationError) throw e; throw fail("uncertain or in-progress step outcome"); }
-  } };
+      try {
+        if (!await exclusive(join(path, "complete.json"), { steps: mutations.length })
+          && (await read(join(path, "complete.json")) as { steps: number }).steps !== mutations.length) throw new Error();
+      } catch { throw fail("completion receipt unavailable"); }
+      return responses;
+    },
+  };
 }

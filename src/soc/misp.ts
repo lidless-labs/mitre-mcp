@@ -411,7 +411,15 @@ export function registerMispTools(
         ),
     },
     async ({ info, techniques, threatLevel, distribution, attributes, confirm, operationKey }) => {
+      let operation: Awaited<ReturnType<typeof operationClient>> | undefined;
       try {
+        operation = writesAllowed(confirm)
+          ? await operationClient(client, "mitre_misp_create_event", operationKey, { info, techniques, threatLevel, distribution, attributes })
+          : undefined;
+        if (operation?.completed) {
+          const event = operation.completed.knownSteps[0]?.data?.Event as { id?: string; uuid?: string } | undefined;
+          return { content: [{ type: "text" as const, text: externalDataJson({ operationKey, ...operation.completed, eventId: event?.id, eventUuid: event?.uuid }, "MISP") }] };
+        }
         const resolvedTechs = techniques
           .map((id) => store.getTechnique(id))
           .filter((t): t is NonNullable<typeof t> => !!t);
@@ -447,77 +455,26 @@ export function registerMispTools(
           };
         }
 
-        const operation = await operationClient(client, "mitre_misp_create_event", operationKey, { info, techniques, threatLevel, distribution, attributes });
-
-        // Create event
-        const eventRes = await operation.request<{
-          Event?: { id: string; uuid: string; info: string };
-        }>("POST", "/events/add", {
-          Event: {
-            info,
-            threat_level_id: threatLevelId,
-            distribution: distribution ?? 0,
-            analysis: "0", // Initial
-            date: new Date().toISOString().split("T")[0],
-          },
-        });
-
-        if (!eventRes.ok || !eventRes.data?.Event) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: socFailure(eventRes),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const eventId = eventRes.data.Event.id;
-        const safeEventId = safePathSegment(eventId, "eventId");
-
-        // Add ATT&CK technique tags
-        const addedTags: string[] = [];
-        for (const tech of resolvedTechs) {
-          const tagName = `misp-galaxy:mitre-attack-pattern="${tech.id} - ${tech.name}"`;
-          const tagRes = await operation.request("POST", `/events/addTag/${safeEventId}`, {
-            tag: tagName,
-          });
-          if (tagRes.ok) addedTags.push(tagName);
-        }
-
-        // Add tactic tags
-        const tactics = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
-        for (const tactic of tactics) {
-          const tagRes = await operation.request("POST", `/events/addTag/${safeEventId}`, {
-            tag: `mitre:tactic="${tactic}"`,
-          });
-          if (tagRes.ok) addedTags.push(`mitre:tactic="${tactic}"`);
-        }
-
-        // Add attributes
-        const addedAttributes: string[] = [];
-        if (attributes && attributes.length > 0) {
-          for (const attr of attributes) {
-            const attrRes = await operation.request(
-              "POST",
-              `/attributes/add/${safeEventId}`,
-              {
-                type: attr.type,
-                value: attr.value,
-                category: attr.category || "Network activity",
-                to_ids: attr.toIds ?? true,
-                comment: attr.comment || "",
-              },
-            );
-            if (attrRes.ok) {
-              addedAttributes.push(`${attr.type}: ${attr.value}`);
-            }
-          }
-        }
-
-        await operation.finish();
+        if (!operation) throw new Error("Operation unavailable");
+        const tactics = [...new Set(resolvedTechs.flatMap((t) => t.tactics))].sort();
+        const addedTags = [
+          ...resolvedTechs.map(tech => `misp-galaxy:mitre-attack-pattern="${tech.id} - ${tech.name}"`),
+          ...tactics.map(tactic => `mitre:tactic="${tactic}"`),
+        ].sort();
+        const addedAttributes = (attributes || []).map(attr => `${attr.type}: ${attr.value}`);
+        const responses = await operation.run([
+          { route: "/events/add", body: { Event: {
+            info, threat_level_id: threatLevelId, distribution: distribution ?? 0,
+            analysis: "0", date: operation.date,
+          } } },
+          ...addedTags.map(tag => ({ route: "/events/addTag/{id}", body: { tag } })),
+          ...(attributes || []).map(attr => ({ route: "/attributes/add/{id}", body: {
+            type: attr.type, value: attr.value, category: attr.category || "Network activity",
+            to_ids: attr.toIds ?? true, comment: attr.comment || "",
+          } })),
+        ], first => safePathSegment((first.Event as { id: string })?.id, "eventId"));
+        const event = responses[0].data?.Event as { id: string; uuid?: string };
+        const eventId = event.id;
 
         return {
           content: [
@@ -527,7 +484,7 @@ export function registerMispTools(
                   operationKey,
                   operationId: operation.operationId,
                   eventId,
-                  eventUuid: eventRes.data.Event.uuid,
+                  eventUuid: event.uuid,
                   info,
                   techniquesTagged: resolvedTechs.map((t) => t.id),
                   tacticsTagged: tactics,
@@ -542,7 +499,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: socRequestError(error),
+              text: socRequestError(operation?.error(error) ?? error),
             },
           ],
           isError: true,

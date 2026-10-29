@@ -202,19 +202,25 @@ export function registerCortexTools(
         ),
     },
     async ({ data, dataType, analyzers, tlp, confirm, operationKey }) => {
+      let operation: Awaited<ReturnType<typeof operationClient>> | undefined;
       try {
         // dataType is schema-constrained, but encode defensively before it
         // enters the request path.
         const safeDataType = safePathSegment(dataType, "dataType");
         // Get available analyzers for this data type
-        const operation = writesAllowed(confirm)
+        operation = writesAllowed(confirm)
           ? await operationClient(client, "mitre_cortex_run_analyzers", operationKey, { data, dataType, analyzers, tlp })
           : undefined;
+        if (operation?.completed) {
+          const jobs = operation.completed.knownSteps.map(step => ({ analyzerId: step.targetId, jobId: step.data?.id }));
+          return { content: [{ type: "text" as const, text: externalDataJson({ operationKey, ...operation.completed, jobs, analyzersRun: jobs.length, analyzersFailed: 0 }, "Cortex") }] };
+        }
         const analyzersRes = !writesAllowed(confirm) ? { ok: true, data: (analyzers || []).map(name => ({ id: name, name, dataTypeList: [dataType] })) } : await client.request<
           Array<{ id: string; name: string; dataTypeList: string[] }>
         >("GET", `/api/analyzer/type/${safeDataType}`);
 
         if (!analyzersRes.ok) {
+          if (operation) throw operation.error();
           return {
             content: [
               {
@@ -235,7 +241,9 @@ export function registerCortexTools(
           );
         }
 
-        const analyzersToRun = availableAnalyzers.slice(0, 5);
+        // Analyzer IDs define mutation identity. Discovery order and names do not.
+        const analyzersToRun = [...new Map(availableAnalyzers.map(a => [a.id, a])).values()]
+          .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).slice(0, 5);
 
         // Write guard: submitting live analyzer jobs runs active tooling
         // against an attacker-influenced observable (sandboxes detonate files,
@@ -276,35 +284,14 @@ export function registerCortexTools(
 
         if (!operation) throw new Error("Operation unavailable");
 
-        // Run analyzers (submit jobs)
-        const jobs: Array<{ analyzerId: string; analyzerName: string; jobId?: string; error?: string }> = [];
-
-        for (const analyzer of analyzersToRun) {
-          const jobRes = await operation.request<{ id: string }>(
-            "POST",
-            `/api/analyzer/${safePathSegment(analyzer.id, "analyzerId")}/run`,
-            {
-              data,
-              dataType,
-              tlp: tlp ?? 2,
-              message: "MITRE MCP analysis",
-            },
-          );
-
-          if (jobRes.ok && jobRes.data) {
-            jobs.push({
-              analyzerId: analyzer.id,
-              analyzerName: analyzer.name,
-              jobId: jobRes.data.id,
-            });
-          } else {
-            jobs.push({
-              analyzerId: analyzer.id,
-              analyzerName: analyzer.name,
-              error: socFailure(jobRes),
-            });
-          }
-        }
+        // Validate and fingerprint the entire selection before submitting a job.
+        const responses = await operation.run(analyzersToRun.map(analyzer => ({
+          route: `/api/analyzer/${safePathSegment(analyzer.id, "analyzerId")}/run`,
+          body: { data, dataType, tlp: tlp ?? 2, message: "MITRE MCP analysis" },
+        })));
+        const jobs = analyzersToRun.map((analyzer, index) => ({
+          analyzerId: analyzer.id, analyzerName: analyzer.name, jobId: responses[index].data?.id,
+        }));
 
         // Map the observable type to likely ATT&CK context
         const contextHints: Record<string, string[]> = {
@@ -323,8 +310,6 @@ export function registerCortexTools(
           })
           .filter((t): t is NonNullable<typeof t> => t !== null);
 
-        await operation.finish();
-
         return {
           content: [
             {
@@ -334,7 +319,7 @@ export function registerCortexTools(
                   operationId: operation.operationId,
                   observable: { data, dataType },
                   analyzersRun: jobs.filter((j) => j.jobId).length,
-                  analyzersFailed: jobs.filter((j) => j.error).length,
+                  analyzersFailed: 0,
                   jobs,
                   suggestedAttackContext: suggestedTechniques,
                   note: "Jobs are asynchronous. Use Cortex API or TheHive to check results.",
@@ -347,7 +332,7 @@ export function registerCortexTools(
           content: [
             {
               type: "text" as const,
-              text: socRequestError(error),
+              text: socRequestError(operation?.error(error) ?? error),
             },
           ],
           isError: true,

@@ -255,13 +255,22 @@ export function registerTheHiveTools(
         ),
     },
     async ({ title, description, techniques, severity, tlp, observables, confirm, operationKey }) => {
+      let operation: Awaited<ReturnType<typeof operationClient>> | undefined;
       try {
+        operation = writesAllowed(confirm)
+          ? await operationClient(client, "mitre_thehive_create_case", operationKey, { title, description, techniques, severity, tlp, observables })
+          : undefined;
+        if (operation?.completed) {
+          return { content: [{ type: "text" as const, text: externalDataJson({ operationKey, ...operation.completed, caseId: operation.completed.knownSteps[0]?.data?._id }, "TheHive") }] };
+        }
         // Resolve techniques
         const resolvedTechs = techniques
           .map((id) => store.getTechnique(id))
-          .filter((t): t is NonNullable<typeof t> => !!t);
+          .filter((t): t is NonNullable<typeof t> => !!t)
+          .map(t => ({ ...t, tactics: [...t.tactics].sort() }));
 
         if (resolvedTechs.length === 0) {
+          if (operation) throw operation.error();
           return {
             content: [
               {
@@ -281,7 +290,7 @@ export function registerTheHiveTools(
         const mitigationContext = resolvedTechs
           .flatMap((t) => {
             const mits = store.getMitigationsForTechnique(t.id);
-            return mits.map(
+            return [...mits].sort((a, b) => a.mitigation.id < b.mitigation.id ? -1 : a.mitigation.id > b.mitigation.id ? 1 : 0).map(
               (m) => `- ${m.mitigation.id} ${m.mitigation.name} (for ${t.id})`,
             );
           })
@@ -332,85 +341,26 @@ export function registerTheHiveTools(
           };
         }
 
-        const operation = await operationClient(client, "mitre_thehive_create_case", operationKey, { title, description, techniques, severity, tlp, observables });
-
-        // Create the case
-        const caseRes = await operation.request<{ _id: string }>(
-          "POST",
-          "/api/v1/case",
-          {
-            title,
-            description: fullDescription,
-            severity: severity || 2,
-            tlp: tlp || 2,
-            tags,
-            flag: false,
-          },
-        );
-
-        if (!caseRes.ok || !caseRes.data) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: socFailure(caseRes),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const caseId = caseRes.data._id;
-        const safeCaseId = safePathSegment(caseId, "caseId");
-
-        // Add observables if provided
-        const addedObservables: string[] = [];
-        if (observables && observables.length > 0) {
-          for (const obs of observables) {
-            const obsRes = await operation.request(
-              "POST",
-              `/api/v1/case/${safeCaseId}/observable`,
-              {
-                dataType: obs.dataType,
-                data: obs.data,
-                ioc: obs.ioc || false,
-                message: obs.message || "",
-                tags: [],
-              },
-            );
-            if (obsRes.ok) {
-              addedObservables.push(`${obs.dataType}: ${obs.data}`);
-            }
-          }
-        }
-
-        // Create tasks for each tactic phase
-        const tacticPhases = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
-        const createdTasks: string[] = [];
-
-        for (const tactic of tacticPhases) {
-          const relevantTechs = resolvedTechs
-            .filter((t) => t.tactics.includes(tactic))
-            .map((t) => `${t.id} ${t.name}`)
-            .join(", ");
-
-          const taskRes = await operation.request(
-            "POST",
-            `/api/v1/case/${safeCaseId}/task`,
-            {
-              title: `Investigate: ${tactic}`,
-              description: `Investigate techniques in the ${tactic} phase: ${relevantTechs}`,
-              status: "Waiting",
-              flag: false,
-            },
-          );
-
-          if (taskRes.ok) {
-            createdTasks.push(`Investigate: ${tactic}`);
-          }
-        }
-
-        await operation.finish();
+        if (!operation) throw new Error("Operation unavailable");
+        const tacticPhases = [...new Set(resolvedTechs.flatMap(t => t.tactics))].sort();
+        const createdTasks = tacticPhases.map(tactic => `Investigate: ${tactic}`);
+        const addedObservables = (observables || []).map(obs => `${obs.dataType}: ${obs.data}`);
+        const responses = await operation.run([
+          { route: "/api/v1/case", body: {
+            title, description: fullDescription, severity: severity || 2,
+            tlp: tlp || 2, tags, flag: false,
+          } },
+          ...(observables || []).map(obs => ({ route: "/api/v1/case/{id}/observable", body: {
+            dataType: obs.dataType, data: obs.data, ioc: obs.ioc || false,
+            message: obs.message || "", tags: [],
+          } })),
+          ...tacticPhases.map(tactic => ({ route: "/api/v1/case/{id}/task", body: {
+            title: `Investigate: ${tactic}`,
+            description: `Investigate techniques in the ${tactic} phase: ${resolvedTechs.filter(t => t.tactics.includes(tactic)).map(t => `${t.id} ${t.name}`).join(", ")}`,
+            status: "Waiting", flag: false,
+          } })),
+        ], first => safePathSegment(first._id as string, "caseId"));
+        const caseId = responses[0].data?._id;
 
         return {
           content: [
@@ -434,7 +384,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: socRequestError(error),
+              text: socRequestError(operation?.error(error) ?? error),
             },
           ],
           isError: true,

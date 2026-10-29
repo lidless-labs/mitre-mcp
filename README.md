@@ -553,13 +553,36 @@ operations can be retried. Back it up as private operational data. SOC writes re
 for POSIX ownership and permissions, exclusive creation, no-follow opens, and
 file/directory fsync. Unsupported state storage fails closed.
 
-Before each mutation the server durably claims a step using an exclusive file.
-Successful receipts retain only request hashes and remote IDs. A retry skips
-completed steps and can continue steps whose intent was never recorded. Changed
-payloads or changed step plans are rejected. An in-progress, failed, timed-out,
-crashed, corrupt, or otherwise uncertain step blocks further submission for that
-key. A concurrent caller may receive this block while the original runs. Retry
-with the same key after the original finishes.
+The server syncs directory entries through the root ancestry before any mutation,
+including entries already created by a concurrent process. It first persists a
+hash of the entire planned mutation sequence, then durably claims each step
+using an exclusive file. Plans are limited to 1,000 mutations per operation.
+Receipts retain request hashes, bounded remote IDs, a plan hash/count, a schema
+version, and the initial UTC date used for MISP event creation. They contain no
+caller text, raw IOCs, credentials, full request bodies, or full responses.
+
+Completed retries return `completed: true`, the original operation ID, and the
+retained event/case/job IDs before consulting ATT&CK data or analyzer discovery.
+A plan with a successful receipt for every step also establishes completion if
+the final completion marker could not be written.
+These recovery summaries include `knownSteps` rather than regenerated enrichment
+or original response bodies. Cortex summaries include retained analyzer IDs when
+available. Large summaries follow the normal output limits. Full IDs remain in
+the private receipts.
+
+Partial retries can continue unclaimed steps only when the full plan matches.
+Analyzer IDs, tags, tactic phases, and mitigation IDs use stable ordering where
+they define the plan. Changed membership or enrichment blocks recovery before
+any new mutation, with known completed step IDs included in the error. MISP
+keeps its original event date across retries. A legacy journal without a plan
+can return completed IDs, but a partial legacy operation requires operator
+reconciliation. Missing plans with recorded intents block recovery. No plan is
+inferred from a new ATT&CK snapshot or analyzer list.
+
+Changed caller payloads are rejected. An in-progress, failed, timed-out, crashed,
+corrupt, or otherwise uncertain step blocks further submission for that key.
+A concurrent caller may receive this block while the original runs. Retry with
+the same key after the original finishes.
 
 This does not provide exactly-once execution at a remote backend. After an
 uncertain outcome, retain the key and receipts, inspect the remote event, case,

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { mkdtemp, readdir, readFile, symlink, chmod, open, mkdir } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, symlink, chmod, open, mkdir, writeFile, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -59,7 +60,9 @@ for (const lane of lanes) {
     });
     const first = await call(lane); expect(first.isError).toBe(true);
     expect(JSON.stringify(first)).toContain("uncertain"); expect(JSON.stringify(first)).not.toContain("secret transport cause");
+    if (failedStep === 2) expect(JSON.stringify(first)).toContain(expectedId(lane));
     const retry = await call(lane); expect(retry.isError).toBe(true); expect(n).toBe(failedStep);
+    if (failedStep === 2) expect(JSON.stringify(retry)).toContain(expectedId(lane));
     expect(JSON.stringify(retry)).toContain("stable-key");
   });
   it(`${lane.name}: concurrent calls have one writer per step`, async () => {
@@ -169,4 +172,166 @@ it.each(["ancestor", "root-parent", "operation-parent"])("directory sync failure
   });
   expect((await call(lanes[0])).isError).toBe(true);
   expect(MispClient.prototype.request).not.toHaveBeenCalled();
+});
+
+// The tool boundary owns retry semantics, including changing discovery/store data.
+const expectedId = (lane: typeof lanes[number]) => lane.cls === MispClient ? "uuid-1" : lane.cls === TheHiveClient ? "case-1" : "job-1";
+async function failBeforeIntent(step = 1) {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  let once = true;
+  vi.mocked(open).mockImplementation((...args) => {
+    if (String(args[0]).endsWith(`/${step}.intent.json`) && once) {
+      once = false;
+      throw Object.assign(new Error("disk full before intent"), { code: "ENOSPC" });
+    }
+    return actual.open(...args);
+  });
+}
+function changePlan(lane: typeof lanes[number], removed = false) {
+  if (lane.cls === CortexClient) {
+    vi.mocked(CortexClient.prototype.request).mockResolvedValue({ ok: true, data: removed ? [] : [{ id: "c", name: "C" }] } as never);
+  } else {
+    const technique = store.getTechnique("T1059")!;
+    vi.spyOn(store, "getTechnique").mockReturnValue(removed ? undefined : { ...technique, name: "Changed reference", tactics: ["discovery", "execution"] });
+  }
+}
+for (const lane of lanes) {
+  it(`${lane.name}: completed replay returns known IDs without consulting mutable enrichment or discovery`, async () => {
+    const first = await call(lane); expect(first.isError).not.toBe(true);
+    vi.mocked(lane.cls.prototype.request).mockClear().mockRejectedValue(new Error("discovery unavailable"));
+    vi.spyOn(store, "getTechnique").mockImplementation(() => { throw new Error("ATT&CK unavailable"); });
+    const retry = await call(lane);
+    expect(retry.isError).not.toBe(true);
+    expect(JSON.stringify(retry)).toContain(expectedId(lane));
+    expect(JSON.stringify(retry)).toContain('completed');
+    expect(lane.cls.prototype.request).not.toHaveBeenCalled();
+  });
+  it.each([false, true])(`${lane.name}: partial plan drift blocks before any new mutation and reports retained IDs (removed: %s)`, async removed => {
+    await failBeforeIntent();
+    expect((await call(lane)).isError).toBe(true);
+    const n = vi.mocked(lane.cls.prototype.request).mock.calls.filter(([m]) => m === "POST").length;
+    expect(n).toBe(1);
+    changePlan(lane, removed);
+    const retry = await call(lane);
+    expect(retry.isError).toBe(true);
+    expect(JSON.stringify(retry)).toContain("plan");
+    expect(JSON.stringify(retry)).toContain(expectedId(lane));
+    expect(JSON.stringify(retry)).not.toContain("private-ioc");
+    expect(vi.mocked(lane.cls.prototype.request).mock.calls.filter(([m]) => m === "POST")).toHaveLength(n);
+  });
+  it(`${lane.name}: immutable plan must be durable before the first POST`, async () => {
+    const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    vi.mocked(open).mockImplementation(async (...args) => {
+      const handle = await actual.open(...args);
+      if (String(args[0]).endsWith("/plan.json")) vi.spyOn(handle, "sync").mockRejectedValue(new Error("plan fsync failed"));
+      return handle;
+    });
+    expect((await call(lane)).isError).toBe(true);
+    expect((await call(lane)).isError).toBe(true);
+    expect(vi.mocked(lane.cls.prototype.request).mock.calls.filter(([m]) => m === "POST")).toHaveLength(0);
+  });
+}
+it("Cortex canonically resumes the original analyzer set when discovery order changes", async () => {
+  await failBeforeIntent();
+  expect((await call(lanes[2])).isError).toBe(true);
+  const original = vi.mocked(CortexClient.prototype.request).getMockImplementation()!;
+  vi.mocked(CortexClient.prototype.request).mockImplementation(async (...args) => args[0] === "GET"
+    ? { ok: true, data: [{ id: "b", name: "B" }, { id: "a", name: "A" }] } as never : original(...args));
+  expect((await call(lanes[2])).isError).not.toBe(true);
+  expect(vi.mocked(CortexClient.prototype.request).mock.calls.filter(([m]) => m === "POST").map(([, path]) => path)).toEqual(["/api/analyzer/a/run", "/api/analyzer/b/run"]);
+});
+it("MISP resumes across midnight under the original event date", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date("2026-10-28T23:59:59Z"));
+    await failBeforeIntent();
+    expect((await call(lanes[0])).isError).toBe(true);
+    vi.setSystemTime(new Date("2026-10-29T00:01:00Z"));
+    expect((await call(lanes[0])).isError).not.toBe(true);
+    const creates = vi.mocked(MispClient.prototype.request).mock.calls.filter(([, route]) => route === "/events/add");
+    expect(creates).toHaveLength(1);
+    expect(creates[0][2]).toMatchObject({ Event: { date: "2026-10-28" } });
+  } finally { vi.useRealTimers(); }
+});
+it.each([false, true])("legacy receipts recover completed IDs and block partial replay without a recorded plan (complete: %s)", async complete => {
+  expect((await call(lanes[0])).isError).not.toBe(true);
+  const [id] = await readdir(state);
+  const dir = join(state, id);
+  const record = JSON.parse(await readFile(join(dir, "operation.json"), "utf8"));
+  await writeFile(join(dir, "operation.json"), JSON.stringify({ fingerprint: record.fingerprint }));
+  await unlink(join(dir, "plan.json")).catch(e => { if (e.code !== "ENOENT") throw e; });
+  if (!complete) await unlink(join(dir, "complete.json"));
+  vi.mocked(MispClient.prototype.request).mockClear();
+  changePlan(lanes[0]);
+  const retry = await call(lanes[0]);
+  expect(retry.isError === true).toBe(!complete);
+  expect(JSON.stringify(retry)).toContain("uuid-1");
+  expect(MispClient.prototype.request).not.toHaveBeenCalled();
+});
+
+it.each(lanes)("$name: completed identity survives changed reference membership", async lane => {
+  const parse = (result: unknown) => JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
+  const first = parse(await call(lane));
+  vi.mocked(lane.cls.prototype.request).mockClear();
+  changePlan(lane, true);
+  const retry = await call(lane);
+  expect(retry.isError).not.toBe(true);
+  const recovered = parse(retry);
+  expect(recovered.operationId).toBe(first.operationId);
+  expect(recovered.completed).toBe(true);
+  if (lane.cls === MispClient) expect(recovered).toMatchObject({ eventId: first.eventId, eventUuid: first.eventUuid });
+  else if (lane.cls === TheHiveClient) expect(recovered.caseId).toBe(first.caseId);
+  else expect(recovered.jobs.map((j: { jobId: string }) => j.jobId)).toEqual(first.jobs.map((j: { jobId: string }) => j.jobId));
+  expect(lane.cls.prototype.request).not.toHaveBeenCalled();
+});
+it.each(lanes.slice(0, 2))("$name: ATT&CK tactic ordering cannot change a partially completed plan", async lane => {
+  const technique = store.getTechnique("T1059")!;
+  const lookup = vi.spyOn(store, "getTechnique").mockReturnValue({ ...technique, tactics: ["execution", "discovery"] });
+  await failBeforeIntent(3);
+  expect((await call(lane)).isError).toBe(true);
+  lookup.mockReturnValue({ ...technique, tactics: ["discovery", "execution"] });
+  expect((await call(lane)).isError).not.toBe(true);
+  const posts = vi.mocked(lane.cls.prototype.request).mock.calls.filter(([m]) => m === "POST");
+  expect(new Set(posts.map(([, path, body]) => JSON.stringify([path, body]))).size).toBe(posts.length);
+});
+it.each(lanes)("$name: changed planning data cannot replay an uncertain second step", async lane => {
+  let n = 0;
+  const request = vi.mocked(lane.cls.prototype.request).getMockImplementation()!;
+  vi.mocked(lane.cls.prototype.request).mockImplementation(async (...args) => {
+    if (args[0] === "POST" && ++n === 2) throw new Error("uncertain transport");
+    return request(...args);
+  });
+  expect((await call(lane)).isError).toBe(true);
+  changePlan(lane);
+  const retry = await call(lane);
+  expect(retry.isError).toBe(true);
+  expect(JSON.stringify(retry)).toContain(expectedId(lane));
+  expect(vi.mocked(lane.cls.prototype.request).mock.calls.filter(([m]) => m === "POST")).toHaveLength(2);
+});
+it.each(lanes)("$name: missing immutable plan with existing intents cannot be replaced", async lane => {
+  await failBeforeIntent();
+  expect((await call(lane)).isError).toBe(true);
+  const [id] = await readdir(state);
+  await unlink(join(state, id, "plan.json"));
+  changePlan(lane);
+  const retry = await call(lane);
+  expect(retry.isError).toBe(true);
+  expect(JSON.stringify(retry)).toContain(expectedId(lane));
+  expect(await readdir(join(state, id))).not.toContain("plan.json");
+  expect(vi.mocked(lane.cls.prototype.request).mock.calls.filter(([m]) => m === "POST")).toHaveLength(1);
+});
+it.each(lanes)("$name: all recorded plan steps recover IDs after completion marker failure and reference drift", async lane => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  vi.mocked(open).mockImplementation((...args) => {
+    if (String(args[0]).endsWith("/complete.json") && args[1] !== undefined && (Number(args[1]) & constants.O_CREAT)) throw Object.assign(new Error("completion disk failure"), { code: "ENOSPC" });
+    return actual.open(...args);
+  });
+  expect((await call(lane)).isError).toBe(true);
+  vi.mocked(open).mockImplementation(actual.open);
+  vi.mocked(lane.cls.prototype.request).mockClear();
+  changePlan(lane, true);
+  const retry = await call(lane);
+  expect(retry.isError).not.toBe(true);
+  expect(JSON.stringify(retry)).toContain(expectedId(lane));
+  expect(lane.cls.prototype.request).not.toHaveBeenCalled();
 });
