@@ -266,6 +266,7 @@ export function registerCortexTools(
                       "Dry run: no analyzer jobs submitted. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to run.",
                     observable: { data, dataType },
                     analyzersThatWouldRun: analyzersToRun.map((a) => a.name),
+                    analyzerSelection: "Availability is checked only on confirmed execution. Omitted names select up to five compatible analyzers. No discovery request is made during a dry run.",
                     suggestedAttackContext: suggestedTechniques,
                   }, "Cortex"),
               },

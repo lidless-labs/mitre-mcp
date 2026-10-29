@@ -3,6 +3,15 @@ import { Agent } from "undici";
 import { socFailure, socRequestError } from "./util.js";
 import type { SocConfig } from "../types.js";
 
+// Credential rotation must not turn a retry into a new remote operation.
+function targetScope(url: string): string {
+  const target = new URL(url);
+  target.username = "";
+  target.password = "";
+  target.hash = "";
+  return createHash("sha256").update(target.href.replace(/\/$/, "")).digest("hex");
+}
+
 export interface SocResponse<T = unknown> {
   ok: boolean;
   data?: T;
@@ -95,7 +104,7 @@ export class WazuhClient {
   private tokenExpiry = 0;
 
   constructor(config: NonNullable<SocConfig["wazuh"]>) {
-    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    this.operationScope = targetScope(config.url);
     this.baseUrl = config.url.replace(/\/$/, "");
     this.username = config.username;
     this.password = config.password;
@@ -178,7 +187,7 @@ export class TheHiveClient {
   private apiKey: string;
 
   constructor(config: NonNullable<SocConfig["thehive"]>) {
-    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    this.operationScope = targetScope(config.url);
     this.baseUrl = config.url.replace(/\/$/, "");
     this.apiKey = config.apiKey;
   }
@@ -223,7 +232,7 @@ export class CortexClient {
   private apiKey: string;
 
   constructor(config: NonNullable<SocConfig["cortex"]>) {
-    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    this.operationScope = targetScope(config.url);
     this.baseUrl = config.url.replace(/\/$/, "");
     this.apiKey = config.apiKey;
   }
@@ -269,7 +278,7 @@ export class MispClient {
   private verifySsl: boolean;
 
   constructor(config: NonNullable<SocConfig["misp"]>) {
-    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    this.operationScope = targetScope(config.url);
     this.baseUrl = config.url.replace(/\/$/, "");
     this.apiKey = config.apiKey;
     this.verifySsl = config.verifySsl;

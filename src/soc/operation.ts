@@ -24,7 +24,11 @@ async function privateDirectory(path: string): Promise<void> {
   if (!s.isDirectory() || s.isSymbolicLink() || s.uid !== process.getuid?.() || (s.mode & 0o077)) throw new Error();
   // Check every existing ancestor for symlinks, including operator-owned paths.
   for (let p = parent; dirname(p) !== p; p = dirname(p)) {
-    const stat = await lstat(p); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error();
+    const stat = await lstat(p);
+    const trustedOwner = stat.uid === 0 || stat.uid === process.getuid?.();
+    const writable = stat.mode & 0o022;
+    const sticky = stat.mode & 0o1000;
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !trustedOwner || (writable && !sticky)) throw new Error();
   }
 }
 async function syncDirectory(path: string): Promise<void> { const f = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); try { await f.sync(); } finally { await f.close(); } }
@@ -70,12 +74,18 @@ export async function operationClient(
     if (!created && (await read(join(path, "operation.json")) as { fingerprint: string }).fingerprint !== fingerprint) throw fail("key payload mismatch");
   } catch (e) { if (e instanceof OperationError) throw e; throw fail("private operation state unavailable or unsafe"); }
   let completedSteps: number | undefined;
-  try { completedSteps = (await read(join(path, "complete.json")) as { steps: number }).steps; }
+  try {
+    completedSteps = (await read(join(path, "complete.json")) as { steps: number }).steps;
+    if (!Number.isSafeInteger(completedSteps) || completedSteps! < 0) throw new Error();
+  }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw fail("invalid completion receipt"); }
   let step = 0;
   return { operationId, async finish() {
     if (completedSteps !== undefined && completedSteps !== step) throw fail("completed step plan mismatch");
-    try { await exclusive(join(path, "complete.json"), { steps: step }); }
+    try {
+      if (!await exclusive(join(path, "complete.json"), { steps: step })
+        && (await read(join(path, "complete.json")) as { steps: number }).steps !== step) throw new Error();
+    }
     catch { throw fail("completion receipt unavailable"); }
   }, async request<T>(method: string, route: string, body?: unknown): Promise<SocResponse<T>> {
     if (completedSteps !== undefined && step >= completedSteps) throw fail("completed step plan mismatch");
@@ -95,7 +105,7 @@ export async function operationClient(
       if ((route === "/events/add" && !(data?.Event as Record<string, unknown>)?.id)
         || (route === "/api/v1/case" && !data?._id)
         || (route.endsWith("/run") && !data?.id)) throw fail("uncertain remote identifier");
-      await exclusive(prefix + ".done.json", { fingerprint, data });
+      if (!await exclusive(prefix + ".done.json", { fingerprint, data })) throw fail("unexpected completion receipt");
       // Both first run and replay use the same minimal ID projection.
       return { ok: true, data: data as T };
     } catch (e) { if (e instanceof OperationError) throw e; throw fail("uncertain or in-progress step outcome"); }
