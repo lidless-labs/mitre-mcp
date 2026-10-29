@@ -10,35 +10,59 @@ export interface SocResponse<T = unknown> {
   status?: number;
 }
 
-// Custom fetch that handles self-signed certs.
-//
-// When `rejectUnauthorized === false` we scope the relaxed TLS policy to a
-// single request via a per-request undici Agent passed as the `dispatcher`.
-// This avoids ever mutating the process-global `NODE_TLS_REJECT_UNAUTHORIZED`,
-// which would disable certificate validation for ALL concurrent outbound
-// requests (a MITM window that could leak SOC credentials).
+const MAX_RESPONSE_BYTES = 1_048_576;
+const REQUEST_DEADLINE_MS = 30_000;
+
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) { void promise.catch(() => undefined); reject(signal.reason); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+function cancelBody(body: ReadableStream<Uint8Array> | null): void {
+  // Error/cancel diagnostics are untrusted. Cancellation must not hold the
+  // response path open when a remote stream refuses to finish cleanup.
+  try { void body?.cancel().catch(() => undefined); } catch { /* already locked */ }
+}
+
+// Keep the deadline and per-request TLS dispatcher alive through body EOF.
+// Cap bytes before buffering or parsing, including the Wazuh auth response.
 async function socFetch(
   url: string,
   options: RequestInit & { rejectUnauthorized?: boolean } = {},
 ): Promise<Response> {
   const { rejectUnauthorized, ...fetchOpts } = options;
-
-  if (rejectUnauthorized === false) {
-    const agent = new Agent({ connect: { rejectUnauthorized: false } });
-    try {
-      // `dispatcher` is an undici extension to RequestInit honored by the
-      // global fetch implementation in Node 18+.
-      return await fetch(url, {
-        ...fetchOpts,
-        dispatcher: agent,
-      } as RequestInit);
-    } finally {
-      // Release the per-request connection pool promptly.
-      void agent.close();
+  const signal = options.signal || AbortSignal.timeout(REQUEST_DEADLINE_MS);
+  const agent = rejectUnauthorized === false ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined;
+  let response: Response | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    response = await abortable(fetch(url, { ...fetchOpts, signal, ...(agent ? { dispatcher: agent } : {}) } as RequestInit), signal);
+    if (!response.ok) { cancelBody(response.body); return response; }
+    const declared = response.headers.get("content-length");
+    if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_RESPONSE_BYTES)) throw new Error("SOC response size limit exceeded.");
+    reader = response.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    if (reader) for (;;) {
+      const { value, done } = await abortable(reader.read(), signal);
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_RESPONSE_BYTES) throw new Error("SOC response size limit exceeded.");
+      chunks.push(value);
     }
+    signal.throwIfAborted();
+    return new Response(bytes ? Buffer.concat(chunks, bytes) : null, { status: response.status, headers: response.headers });
+  } catch (error) {
+    if (reader) void reader.cancel().catch(() => undefined);
+    else if (response) cancelBody(response.body);
+    throw error;
+  } finally {
+    reader?.releaseLock();
+    if (agent) void agent.close().catch(() => undefined);
   }
-
-  return fetch(url, fetchOpts);
 }
 
 // Error bodies and reason phrases can contain credentials, proxy diagnostics,
@@ -47,7 +71,7 @@ async function parseResponseBody<T>(
   response: Response,
 ): Promise<{ data?: T; error?: string }> {
   if (!response.ok) {
-    await response.body?.cancel();
+    cancelBody(response.body);
     return { error: socFailure(response) };
   }
   const raw = await response.text();
@@ -78,7 +102,7 @@ export class WazuhClient {
     this.verifySsl = config.verifySsl;
   }
 
-  private async authenticate(): Promise<string> {
+  private async authenticate(signal: AbortSignal): Promise<string> {
     if (this.token && Date.now() < this.tokenExpiry) {
       return this.token;
     }
@@ -87,6 +111,7 @@ export class WazuhClient {
       `${this.baseUrl}/security/user/authenticate`,
       {
         method: "POST",
+        signal,
         headers: {
           Authorization: `Basic ${Buffer.from(`${this.username}:${this.password}`).toString("base64")}`,
         },
@@ -115,11 +140,13 @@ export class WazuhClient {
     body?: unknown,
   ): Promise<SocResponse<T>> {
     try {
-      const token = await this.authenticate();
+      const signal = AbortSignal.timeout(REQUEST_DEADLINE_MS);
+      const token = await this.authenticate(signal);
       const url = `${this.baseUrl}${path}`;
 
       const response = await socFetch(url, {
         method,
+        signal,
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",

@@ -563,3 +563,9 @@ attributes, observables, tasks, or analyzer jobs through existing read tools,
 and reconcile with an operator. Never choose a new key, remove an intent, or
 blindly resubmit to bypass the block. There is no automatic recovery for an
 unknown create outcome. Journal access failures stop writes before submission.
+
+SOC HTTP responses, including Wazuh authentication, have a 1 MiB limit checked
+against both declared and streamed bytes before parsing. A 30-second total
+request deadline includes body completion. For Wazuh this deadline covers both
+authentication and the following API request. Oversized, incomplete, and stalled
+responses return local errors without remote body text or exception causes.
