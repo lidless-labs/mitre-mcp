@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://lidless.dev/mitre-mcp"><strong>Website &amp; docs &rarr; lidless.dev/mitre-mcp</strong></a>
+  <a href="https://lidless.dev/mitre-mcp"><strong>Website and docs: lidless.dev/mitre-mcp</strong></a>
 </p>
 
 <p align="center">
@@ -61,7 +61,7 @@ Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (m
 }
 ```
 
-To enable the optional SOC integrations, add the relevant environment variables. Example hosts below use the [RFC 5737](https://datatracker.ietf.org/doc/html/rfc5737) documentation address `192.0.2.10`; replace them with your own:
+To enable the optional SOC integrations, add the relevant environment variables. Example hosts below use the [RFC 5737](https://datatracker.ietf.org/doc/html/rfc5737) documentation address `192.0.2.10`. Replace them with your own:
 
 ```json
 {
@@ -86,7 +86,7 @@ To enable the optional SOC integrations, add the relevant environment variables.
 }
 ```
 
-The first run downloads the ATT&CK STIX bundles and caches them under `~/.mitre-mcp/data`; subsequent runs are offline until the next refresh.
+The first run downloads the ATT&CK STIX bundles and caches them under `~/.mitre-mcp/data`. Subsequent runs are offline until the next refresh.
 
 ### From source
 
@@ -102,7 +102,7 @@ Other clients (OpenClaw, Hermes, Codex CLI) are covered under [Other MCP clients
 
 ## Tools
 
-mitre-mcp registers **39 tools**, **3 resources**, and **4 prompts**. The 19 core ATT&CK tools work with no configuration; the 18 SOC tools require the matching integration to be configured (the 2 cross-stack tools degrade gracefully to whatever is connected).
+mitre-mcp registers **39 tools**, **3 resources**, and **4 prompts**. The 19 core ATT&CK tools work with no configuration. The 18 SOC tools require the matching integration to be configured (the 2 cross-stack tools degrade gracefully to whatever is connected).
 
 ### Core ATT&CK tools (19)
 
@@ -256,7 +256,7 @@ When SSL verification is disabled (`*_VERIFY_SSL=false`), the relaxed TLS policy
 
 ## CLI
 
-The same package ships a read-only **search tool**, `attack`, for shells, cron, and CI. It shares the local ATT&CK data core with the MCP server, so what the agent can look up, you can look up from a terminal. It exposes only read/lookup operations; data refresh and SOC correlation stay in the MCP server.
+The same package ships a read-only **search tool**, `attack`, for shells, cron, and CI. It shares the local ATT&CK data core with the MCP server, so what the agent can look up, you can look up from a terminal. It exposes only read/lookup operations. Data refresh and SOC correlation stay in the MCP server.
 
 ```bash
 npx mitre-mcp@latest stats
@@ -275,11 +275,11 @@ Run `attack help` for the full command list. `--json` emits raw JSON instead of 
 
 ### Starting the MCP server
 
-`attack mcp` (or the back-compat `mitre-mcp` bin) starts the stdio MCP server. If a launcher referenced the file path `dist/index.js` directly, point it at `dist/mcp-bin.js` (or `dist/cli.js mcp`); launchers that use the `mitre-mcp` bin name need no change.
+`attack mcp` (or the back-compat `mitre-mcp` bin) starts the stdio MCP server. If a launcher referenced the file path `dist/index.js` directly, point it at `dist/mcp-bin.js` (or `dist/cli.js mcp`). Launchers that use the `mitre-mcp` bin name need no change.
 
 ## Examples
 
-Ask your agent in natural language; it picks the tool. A few that work out of the box:
+Ask your agent in natural language. It picks the tool. A few that work out of the box:
 
 ```
 Look up T1059.001 and list the mitigations for it.
@@ -399,10 +399,10 @@ Data is downloaded on first run and cached locally. Set `MITRE_UPDATE_INTERVAL` 
 
 ## What mitre-mcp is not
 
-- It is **not a SIEM or a replacement for Wazuh, TheHive, Cortex, or MISP**. It reads from and writes to them through their APIs; it does not store or index your events.
+- It is **not a SIEM or a replacement for Wazuh, TheHive, Cortex, or MISP**. It reads from and writes to them through their APIs. It does not store or index your events.
 - It is **not an autonomous responder**. State-changing SOC tools dry-run by default and require explicit `confirm: true` or `MITRE_SOC_ALLOW_WRITES=true` before they touch a platform.
 - It supports client-launched stdio and an optional shared HTTP process. Hosting and service management remain the operator's responsibility.
-- It does **not maintain the ATT&CK data itself**. The knowledge base is MITRE's; mitre-mcp downloads, parses, caches, and serves it.
+- It does **not maintain the ATT&CK data itself**. The knowledge base is MITRE's. mitre-mcp downloads, parses, caches, and serves it.
 - It is **not a curated CTI feed**. It serves what MITRE publishes plus what your own SOC platforms contain.
 
 ## HTTP mode
@@ -430,7 +430,7 @@ and `MITRE_SOC_ALLOW_WRITES` setting.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MITRE_MCP_HTTP_TOKEN` | Required | Independent bearer credential, at least 32 characters |
-| `MITRE_MCP_HTTP_HOST` | IPv4 loopback | Specific listener address; wildcard addresses are refused |
+| `MITRE_MCP_HTTP_HOST` | IPv4 loopback | Specific listener address. Wildcard addresses are refused |
 | `MITRE_MCP_HTTP_PORT` | `3114` | TCP port (`0` selects a free port) |
 
 The resolved URL is printed to stderr. `/mcp` supports authenticated Streamable
