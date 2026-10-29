@@ -1,4 +1,5 @@
 import { Agent } from "undici";
+import { socFailure, socRequestError } from "./util.js";
 import type { SocConfig } from "../types.js";
 
 export interface SocResponse<T = unknown> {
@@ -39,37 +40,22 @@ async function socFetch(
   return fetch(url, fetchOpts);
 }
 
-// Safely read a SOC response body. Many SOC platforms return HTML/plain-text
-// error pages (auth redirects, reverse-proxy 502s, rate limiters) with a
-// success-looking shape; calling `.json()` unconditionally throws and masks
-// the real HTTP status. Guard on content-type and fall back to text.
+// Error bodies and reason phrases can contain credentials, proxy diagnostics,
+// or attacker instructions. Discard them and expose only the HTTP status.
 async function parseResponseBody<T>(
   response: Response,
 ): Promise<{ data?: T; error?: string }> {
-  const contentType = response.headers.get("content-type") || "";
-  const raw = await response.text();
-
-  if (contentType.includes("application/json") || contentType.includes("+json")) {
-    if (raw.length === 0) return { data: undefined };
-    try {
-      return { data: JSON.parse(raw) as T };
-    } catch {
-      // Declared JSON but unparseable: surface a snippet instead of crashing.
-      return {
-        error: `Non-JSON response (HTTP ${response.status}): ${raw.slice(0, 300)}`,
-      };
-    }
+  if (!response.ok) {
+    await response.body?.cancel();
+    return { error: socFailure(response) };
   }
-
-  // Non-JSON body: try to parse anyway (some servers omit the header), else
-  // surface the text so the caller sees the real status/error.
+  const raw = await response.text();
   if (raw.length === 0) return { data: undefined };
   try {
+    // Some SOC servers omit the content-type header on valid JSON responses.
     return { data: JSON.parse(raw) as T };
   } catch {
-    return {
-      error: `Non-JSON response (HTTP ${response.status}): ${raw.slice(0, 300)}`,
-    };
+    return { error: `Invalid SOC response (HTTP ${response.status}).` };
   }
 }
 
@@ -106,7 +92,7 @@ export class WazuhClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Wazuh auth failed: ${response.status} ${response.statusText}`);
+      throw new Error(socFailure(response));
     }
 
     const body = (await response.json()) as { data?: { token?: string } };
@@ -149,7 +135,7 @@ export class WazuhClient {
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: socRequestError(error),
       };
     }
   }
@@ -192,7 +178,7 @@ export class TheHiveClient {
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: socRequestError(error),
       };
     }
   }
@@ -235,7 +221,7 @@ export class CortexClient {
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: socRequestError(error),
       };
     }
   }
@@ -282,7 +268,7 @@ export class MispClient {
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: socRequestError(error),
       };
     }
   }

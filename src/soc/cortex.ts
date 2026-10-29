@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { CortexClient } from "./client.js";
-import { safePathSegment, writesAllowed } from "./util.js";
+import { safePathSegment, writesAllowed, externalDataJson, socRequestError, socFailure } from "./util.js";
 
 // Mapping of common Cortex analyzer types to ATT&CK data sources
 const ANALYZER_TO_DATASOURCE: Record<string, string[]> = {
@@ -52,7 +52,7 @@ export function registerCortexTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch Cortex analyzers: ${analyzersRes.error || `HTTP ${analyzersRes.status}`}`,
+                text: socFailure(analyzersRes),
               },
             ],
             isError: true,
@@ -143,8 +143,7 @@ export function registerCortexTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   analyzerCount: analyzers.length,
                   analyzers: analyzerMappings,
                   coveredDataSources: [...coveredDataSources],
@@ -159,10 +158,7 @@ export function registerCortexTools(
                     .filter((ds) => !coveredDataSources.has(ds.name))
                     .map((ds) => ds.name)
                     .slice(0, 10),
-                },
-                null,
-                2,
-              ),
+                }, "Cortex"),
             },
           ],
         };
@@ -171,7 +167,7 @@ export function registerCortexTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -218,7 +214,7 @@ export function registerCortexTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch analyzers for type ${dataType}: ${analyzersRes.error || `HTTP ${analyzersRes.status}`}`,
+                text: socFailure(analyzersRes),
               },
             ],
             isError: true,
@@ -259,18 +255,14 @@ export function registerCortexTools(
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(
-                  {
+                text: externalDataJson({
                     dryRun: true,
                     message:
                       "Dry run: no analyzer jobs submitted. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to run.",
                     observable: { data, dataType },
                     analyzersThatWouldRun: analyzersToRun.map((a) => a.name),
                     suggestedAttackContext: suggestedTechniques,
-                  },
-                  null,
-                  2,
-                ),
+                  }, "Cortex"),
               },
             ],
           };
@@ -301,7 +293,7 @@ export function registerCortexTools(
             jobs.push({
               analyzerId: analyzer.id,
               analyzerName: analyzer.name,
-              error: jobRes.error || `HTTP ${jobRes.status}`,
+              error: socFailure(jobRes),
             });
           }
         }
@@ -327,18 +319,14 @@ export function registerCortexTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   observable: { data, dataType },
                   analyzersRun: jobs.filter((j) => j.jobId).length,
                   analyzersFailed: jobs.filter((j) => j.error).length,
                   jobs,
                   suggestedAttackContext: suggestedTechniques,
                   note: "Jobs are asynchronous. Use Cortex API or TheHive to check results.",
-                },
-                null,
-                2,
-              ),
+                }, "Cortex"),
             },
           ],
         };
@@ -347,7 +335,7 @@ export function registerCortexTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,

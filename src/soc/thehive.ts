@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { TheHiveClient } from "./client.js";
-import { safePathSegment, writesAllowed } from "./util.js";
+import { safePathSegment, writesAllowed, externalDataJson, socRequestError, socFailure } from "./util.js";
 
 export function registerTheHiveTools(
   server: McpServer,
@@ -37,7 +37,7 @@ export function registerTheHiveTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch case ${caseId}: ${caseRes.error || `HTTP ${caseRes.status}`}`,
+                text: socFailure(caseRes),
               },
             ],
             isError: true,
@@ -187,8 +187,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   caseId: theCase._id,
                   caseTitle: theCase.title,
                   caseSeverity: theCase.severity,
@@ -200,10 +199,7 @@ export function registerTheHiveTools(
                   suggestedMitigations: mitigations,
                   likelyThreatGroups: groupMatches,
                   tagsAdded,
-                },
-                null,
-                2,
-              ),
+                }, "TheHive"),
             },
           ],
         };
@@ -212,7 +208,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -313,8 +309,7 @@ export function registerTheHiveTools(
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(
-                  {
+                text: externalDataJson({
                     dryRun: true,
                     message:
                       "Dry run: no case created. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to create.",
@@ -329,10 +324,7 @@ export function registerTheHiveTools(
                       ),
                       tasksToCreate: tacticPhases.map((t) => `Investigate: ${t}`),
                     },
-                  },
-                  null,
-                  2,
-                ),
+                  }, "TheHive"),
               },
             ],
           };
@@ -357,7 +349,7 @@ export function registerTheHiveTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to create case: ${caseRes.error || `HTTP ${caseRes.status}`}`,
+                text: socFailure(caseRes),
               },
             ],
             isError: true,
@@ -418,18 +410,14 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   caseId,
                   title,
                   techniquesLinked: resolvedTechs.map((t) => t.id),
                   tags,
                   observablesAdded: addedObservables,
                   tasksCreated: createdTasks,
-                },
-                null,
-                2,
-              ),
+                }, "TheHive"),
             },
           ],
         };
@@ -438,7 +426,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -488,7 +476,7 @@ export function registerTheHiveTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to list cases: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -533,11 +521,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                { count: enriched.length, cases: enriched },
-                null,
-                2,
-              ),
+              text: externalDataJson({ count: enriched.length, cases: enriched }, "TheHive"),
             },
           ],
         };
@@ -546,7 +530,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,

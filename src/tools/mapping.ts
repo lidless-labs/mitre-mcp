@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { externalDataJson } from "../soc/util.js";
 import type { AttackDataStore } from "../data/index.js";
 
 export function registerMappingTools(
@@ -89,10 +90,9 @@ export function registerMappingTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: externalDataJson(
                 { alertType, matchCount: results.length, matches: results },
-                null,
-                2,
+                "Caller-supplied alert data",
               ),
             },
           ],

@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { WazuhClient } from "./client.js";
-import { safePathSegment } from "./util.js";
+import { safePathSegment, externalDataJson, socRequestError, socFailure } from "./util.js";
 
 // Mapping of Wazuh rule groups to ATT&CK tactic short names
 const WAZUH_GROUP_TO_TACTIC: Record<string, string[]> = {
@@ -68,15 +68,11 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
-                  manager: managerRes.data,
-                  agents: agentsRes.data,
-                  ruleStats: rulesRes.data,
-                },
-                null,
-                2,
-              ),
+              text: externalDataJson({
+                  manager: managerRes.ok ? managerRes.data : { error: socFailure(managerRes) },
+                  agents: agentsRes.ok ? agentsRes.data : { error: socFailure(agentsRes) },
+                  ruleStats: rulesRes.ok ? rulesRes.data : { error: socFailure(rulesRes) },
+                }, "Wazuh"),
             },
           ],
         };
@@ -85,7 +81,7 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -259,16 +255,12 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   input: { ruleId, ruleDescription, ruleGroups, agentPlatform },
                   matchCount: matchedTechniques.length,
                   matches: matchedTechniques.slice(0, 15),
                   suggestedMitigations: topMitigations,
-                },
-                null,
-                2,
-              ),
+                }, "Wazuh"),
             },
           ],
         };
@@ -277,7 +269,7 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -324,7 +316,7 @@ export function registerWazuhTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch Wazuh rules: ${rulesRes.error || "Unknown error"}`,
+                text: socFailure(rulesRes),
               },
             ],
             isError: true,
@@ -390,8 +382,7 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   totalWazuhRules: totalRules,
                   rulesWithMitreMapping: mappedRules.length,
                   uniqueTechniquesCovered: techniqueCoverage.size,
@@ -402,10 +393,7 @@ export function registerWazuhTools(
                   tacticCoverage: Object.fromEntries(tacticCoverage),
                   topCoveredTechniques: topCovered,
                   topGaps: gaps,
-                },
-                null,
-                2,
-              ),
+                }, "Wazuh"),
             },
           ],
         };
@@ -414,7 +402,7 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -463,7 +451,7 @@ export function registerWazuhTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch alerts: ${res.error || "Unknown error"}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -508,11 +496,7 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                { alertCount: enriched.length, alerts: enriched },
-                null,
-                2,
-              ),
+              text: externalDataJson({ alertCount: enriched.length, alerts: enriched }, "Wazuh"),
             },
           ],
         };
@@ -521,7 +505,7 @@ export function registerWazuhTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,

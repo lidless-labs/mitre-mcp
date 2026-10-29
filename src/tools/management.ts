@@ -39,7 +39,7 @@ export function registerManagementTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK data update failed. Check connectivity and cache access.",
             },
           ],
           isError: true,

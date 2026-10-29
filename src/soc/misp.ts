@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { MispClient } from "./client.js";
-import { safePathSegment, writesAllowed } from "./util.js";
+import { safePathSegment, writesAllowed, externalDataJson, socRequestError, socFailure } from "./util.js";
 
 export function registerMispTools(
   server: McpServer,
@@ -63,7 +63,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch MISP event ${eventId}: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -210,8 +210,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   eventId: event.id,
                   eventInfo: event.info,
                   eventDate: event.date,
@@ -224,10 +223,7 @@ export function registerMispTools(
                   iocs: iocs.slice(0, 20),
                   likelyThreatGroups: groupMatches,
                   suggestedDataSources: [...suggestedDataSources],
-                },
-                null,
-                2,
-              ),
+                }, "MISP"),
             },
           ],
         };
@@ -236,7 +232,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -319,7 +315,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: `MISP search failed: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -355,15 +351,11 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   searchCriteria: { techniqueId, groupName, indicatorType },
                   resultCount: results.length,
                   indicators: results,
-                },
-                null,
-                2,
-              ),
+                }, "MISP"),
             },
           ],
         };
@@ -372,7 +364,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -433,8 +425,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(
-                  {
+                text: externalDataJson({
                     dryRun: true,
                     message:
                       "Dry run: no event created. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to create.",
@@ -448,10 +439,7 @@ export function registerMispTools(
                         (a) => `${a.type}: ${a.value}`,
                       ),
                     },
-                  },
-                  null,
-                  2,
-                ),
+                  }, "MISP"),
               },
             ],
           };
@@ -475,7 +463,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to create MISP event: ${eventRes.error || `HTTP ${eventRes.status}`}`,
+                text: socFailure(eventRes),
               },
             ],
             isError: true,
@@ -529,8 +517,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   eventId,
                   eventUuid: eventRes.data.Event.uuid,
                   info,
@@ -538,10 +525,7 @@ export function registerMispTools(
                   tacticsTagged: tactics,
                   tagsAdded: addedTags.length,
                   attributesAdded: addedAttributes,
-                },
-                null,
-                2,
-              ),
+                }, "MISP"),
             },
           ],
         };
@@ -550,7 +534,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -604,7 +588,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to list MISP events: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -647,11 +631,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                { count: events.length, events },
-                null,
-                2,
-              ),
+              text: externalDataJson({ count: events.length, events }, "MISP"),
             },
           ],
         };
@@ -660,7 +640,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
