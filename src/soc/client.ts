@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Agent } from "undici";
 import { socFailure, socRequestError } from "./util.js";
 import type { SocConfig } from "../types.js";
@@ -61,6 +62,7 @@ async function parseResponseBody<T>(
 
 // Wazuh client
 export class WazuhClient {
+  readonly operationScope: string;
   private baseUrl: string;
   private username: string;
   private password: string;
@@ -69,6 +71,7 @@ export class WazuhClient {
   private tokenExpiry = 0;
 
   constructor(config: NonNullable<SocConfig["wazuh"]>) {
+    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
     this.baseUrl = config.url.replace(/\/$/, "");
     this.username = config.username;
     this.password = config.password;
@@ -143,10 +146,12 @@ export class WazuhClient {
 
 // TheHive client
 export class TheHiveClient {
+  readonly operationScope: string;
   private baseUrl: string;
   private apiKey: string;
 
   constructor(config: NonNullable<SocConfig["thehive"]>) {
+    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
     this.baseUrl = config.url.replace(/\/$/, "");
     this.apiKey = config.apiKey;
   }
@@ -186,10 +191,12 @@ export class TheHiveClient {
 
 // Cortex client
 export class CortexClient {
+  readonly operationScope: string;
   private baseUrl: string;
   private apiKey: string;
 
   constructor(config: NonNullable<SocConfig["cortex"]>) {
+    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
     this.baseUrl = config.url.replace(/\/$/, "");
     this.apiKey = config.apiKey;
   }
@@ -229,11 +236,13 @@ export class CortexClient {
 
 // MISP client
 export class MispClient {
+  readonly operationScope: string;
   private baseUrl: string;
   private apiKey: string;
   private verifySsl: boolean;
 
   constructor(config: NonNullable<SocConfig["misp"]>) {
+    this.operationScope = createHash("sha256").update(JSON.stringify(config)).digest("hex");
     this.baseUrl = config.url.replace(/\/$/, "");
     this.apiKey = config.apiKey;
     this.verifySsl = config.verifySsl;

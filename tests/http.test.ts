@@ -45,7 +45,7 @@ async function start(extra = {}) {
   dirs.push(dataDir);
   writeFileSync(join(dataDir, "enterprise-attack.json"), JSON.stringify({ type: "bundle", id: "bundle--test", objects: [{ type: "attack-pattern", id: "attack-pattern--test", name: "Test technique", external_references: [{ source_name: "mitre-attack", external_id: "T1001" }] }] }));
   writeFileSync(join(dataDir, "metadata.json"), JSON.stringify({ lastUpdated: new Date().toISOString(), matrices: ["enterprise"] }));
-  configure({ MITRE_DATA_DIR: dataDir, MITRE_MATRICES: "enterprise", ...extra });
+  configure({ MITRE_SOC_STATE_DIR: join(dataDir, "operations"), MITRE_DATA_DIR: dataDir, MITRE_MATRICES: "enterprise", ...extra });
   http = await createHttpServer();
   return `http://localhost:${http.port}`;
 }
@@ -240,7 +240,7 @@ describe("authenticated Streamable HTTP", () => {
     try {
       const url = await start({ THEHIVE_URL: `http://localhost:${address.port}`, THEHIVE_API_KEY: "test-upstream-key" });
       const [a, b] = await Promise.all([connect(url), connect(url)]);
-      const args = { title: "Test incident", techniques: ["T1001"] };
+      const args = { title: "Test incident", techniques: ["T1001"], operationKey: "http-isolation" };
       const confirmed = await a.client.callTool({ name: "mitre_thehive_create_case", arguments: { ...args, confirm: true } });
       expect(confirmed.isError).not.toBe(true);
       for (const client of [a.client, b.client]) {

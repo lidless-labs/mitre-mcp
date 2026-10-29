@@ -531,3 +531,35 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 <p align="center"><sub><strong>Security / SOC:</strong> <a href="https://github.com/lidless-labs/soc-stack">soc-stack</a> &middot; <a href="https://github.com/lidless-labs/wazuh-mcp">wazuh-mcp</a> &middot; <a href="https://github.com/lidless-labs/misp-mcp">misp-mcp</a> &middot; <a href="https://github.com/lidless-labs/suricata-mcp">suricata-mcp</a> &middot; <a href="https://github.com/lidless-labs/thehive-mcp">thehive-mcp</a> &middot; <a href="https://github.com/lidless-labs/cortex-mcp">cortex-mcp</a> &middot; <a href="https://github.com/lidless-labs/zeek-mcp">zeek-mcp</a> &middot; <a href="https://github.com/lidless-labs/hotwash">hotwash</a></sub></p>
 
 <p align="center"><sub><a href="https://lidless.dev">All tools</a> &middot; <a href="https://github.com/lidless-labs">Lidless Labs on GitHub</a></sub></p>
+
+### Safe retries for SOC writes
+
+`mitre_misp_create_event`, `mitre_thehive_create_case`, and
+`mitre_cortex_run_analyzers` require a caller-chosen `operationKey` for actual
+writes, in addition to the existing `confirm` or global write policy. Use a
+stable key such as `incident-42-enrichment`, and retain exactly the same payload
+on every retry. Responses include the key and a hashed operation ID. Dry runs
+need no key and perform no network calls or journal writes.
+
+The private journal defaults to `~/.mitre-mcp/operations`. Operators can set
+`MITRE_SOC_STATE_DIR` to an absolute local path. The state root must be owned by
+the process user with mode 0700, with no symlink components. Its ancestors and
+all other processes running as that user are trusted. Use one durable local
+state directory across server restarts and concurrent processes. Separate hosts
+or state directories do not coordinate. Do not delete or rotate this state while
+operations can be retried. Back it up as private operational data.
+
+Before each mutation the server durably claims a step using an exclusive file.
+Successful receipts retain only request hashes and remote IDs. A retry skips
+completed steps and can continue steps whose intent was never recorded. Changed
+payloads or changed step plans are rejected. An in-progress, failed, timed-out,
+crashed, corrupt, or otherwise uncertain step blocks further submission for that
+key. A concurrent caller may receive this block while the original runs. Retry
+with the same key after the original finishes.
+
+This does not provide exactly-once execution at a remote backend. After an
+uncertain outcome, retain the key and receipts, inspect the remote event, case,
+attributes, observables, tasks, or analyzer jobs through existing read tools,
+and reconcile with an operator. Never choose a new key, remove an intent, or
+blindly resubmit to bypass the block. There is no automatic recovery for an
+unknown create outcome. Journal access failures stop writes before submission.

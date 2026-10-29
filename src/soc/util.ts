@@ -1,3 +1,4 @@
+import { OperationError } from "./operation.js";
 // Shared helpers for SOC integration tools: ID validation, safe path
 // encoding, and the write-confirmation guard.
 
@@ -116,6 +117,7 @@ export function externalDataJson(
 
 /** Only locally chosen messages may cross the SOC error boundary. */
 export function socRequestError(error?: unknown): string {
+  if (error instanceof OperationError) return error.message;
   if (error instanceof DOMException) {
     if (error.name === "TimeoutError") return "SOC request timed out.";
     if (error.name === "AbortError") return "SOC request aborted.";

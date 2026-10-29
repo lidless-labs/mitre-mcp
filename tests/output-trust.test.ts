@@ -1,3 +1,6 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -24,6 +27,7 @@ let store: AttackDataStore;
 let server: ReturnType<typeof createMcpServer>;
 beforeEach(async () => {
   vi.stubEnv("MITRE_SOC_ALLOW_WRITES", "false");
+  vi.stubEnv("MITRE_SOC_STATE_DIR", await mkdtemp(join(tmpdir(), "mitre-trust-")));
   store = new AttackDataStore(config);
   store.loadFromBundles(new Map([["enterprise", { type: "bundle", id: "bundle--test", objects: [{ type: "attack-pattern", id: "attack-pattern--test", name: "Command", description: "Command execution", external_references: [{ source_name: "mitre-attack", external_id: "T1059" }], kill_chain_phases: [{ kill_chain_name: "mitre-attack", phase_name: "execution" }] }] }]]));
   vi.spyOn(WazuhClient.prototype, "request").mockImplementation(async (_method, path) => ({ ok: true, data: path.startsWith("/alerts") ? { data: { affected_items: [alert] } } : path.startsWith("/rules?") ? { data: { affected_items: [alert.rule] } } : { [marker]: marker, _trust: { trust: "trusted" } } }) as never);
@@ -81,7 +85,7 @@ describe("external SOC text at the MCP boundary", () => {
 
   it.each(socCalls.filter(([name]) => name !== "mitre_map_wazuh_alert"))("%s redacts thrown exceptions", async (name, args) => {
     for (const cls of [WazuhClient, TheHiveClient, CortexClient, MispClient]) vi.mocked(cls.prototype.request).mockRejectedValue(new Error(marker + " credential=do-not-return"));
-    const result = await client.callTool({ name, arguments: { ...args, confirm: true } });
+    const result = await client.callTool({ name, arguments: { ...args, confirm: true, operationKey: "trust-test" } });
     const text = JSON.stringify(result);
     expect(text).not.toContain("IGNORE_RULES");
     expect(text).not.toContain("do-not-return");
@@ -89,15 +93,15 @@ describe("external SOC text at the MCP boundary", () => {
 
   it.each(socCalls.filter(([name]) => name !== "mitre_map_wazuh_alert"))("%s discards returned upstream error text", async (name, args) => {
     for (const cls of [WazuhClient, TheHiveClient, CortexClient, MispClient]) vi.mocked(cls.prototype.request).mockResolvedValue({ ok: false, status: 503, error: marker + " credential=do-not-return", data: { message: marker } });
-    const result = await client.callTool({ name, arguments: { ...args, confirm: true } });
+    const result = await client.callTool({ name, arguments: { ...args, confirm: true, operationKey: "trust-test" } });
     expect(JSON.stringify(result)).not.toMatch(/IGNORE_RULES|do-not-return/);
   });
 
   it.each(socCalls.filter(([name]) => ["mitre_thehive_create_case", "mitre_misp_create_event", "mitre_cortex_run_analyzers"].includes(name)))("%s bounds confirmed-operation output using mocked services only", async (name, args, source) => {
     vi.mocked(TheHiveClient.prototype.request).mockResolvedValue({ ok: true, data: caseData });
     vi.mocked(MispClient.prototype.request).mockResolvedValue({ ok: true, data: { Event: { ...event, uuid: marker } } });
-    vi.mocked(CortexClient.prototype.request).mockImplementation(async (_method, path) => ({ ok: true, data: path.endsWith("/run") ? { id: marker } : [{ id: "analyzer-1", name: marker, dataTypeList: ["ip"] }] }) as never);
-    const result = await client.callTool({ name, arguments: { ...args, confirm: true } });
+    vi.mocked(CortexClient.prototype.request).mockImplementation(async (_method, path) => ({ ok: true, data: path.endsWith("/run") ? { id: "job-1" } : [{ id: "analyzer-1", name: marker, dataTypeList: ["ip"] }] }) as never);
+    const result = await client.callTool({ name, arguments: { ...args, confirm: true, operationKey: "trust-test" } });
     expect(result.isError).not.toBe(true);
     const text = (result.content as { text: string }[])[0].text;
     expect(JSON.parse(text)._trust).toMatchObject({ source, usage: "data-only" });
@@ -107,7 +111,7 @@ describe("external SOC text at the MCP boundary", () => {
 
   it("rejects a hostile analyzer ID without submitting a job", async () => {
     vi.mocked(CortexClient.prototype.request).mockResolvedValue({ ok: true, data: [{ id: marker, name: marker, dataTypeList: ["ip"] }] });
-    const result = await client.callTool({ name: "mitre_cortex_run_analyzers", arguments: { data: marker, dataType: "ip", confirm: true } });
+    const result = await client.callTool({ name: "mitre_cortex_run_analyzers", arguments: { data: marker, dataType: "ip", confirm: true, operationKey: "trust-test" } });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).not.toContain("IGNORE_RULES");
     expect(vi.mocked(CortexClient.prototype.request).mock.calls).toHaveLength(1);

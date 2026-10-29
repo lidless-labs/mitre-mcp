@@ -1,3 +1,4 @@
+import { operationClient } from "./operation.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -245,6 +246,7 @@ export function registerTheHiveTools(
         )
         .optional()
         .describe("Observables to add to the case"),
+      operationKey: z.string().optional().describe("Stable operation key required for actual writes. Reuse the same key and payload on every retry. Uncertain outcomes block until operator reconciliation."),
       confirm: z
         .boolean()
         .optional()
@@ -252,7 +254,7 @@ export function registerTheHiveTools(
           "Must be true to actually create the case in TheHive. Defaults to false (dry-run: returns the case that would be created without writing). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
         ),
     },
-    async ({ title, description, techniques, severity, tlp, observables, confirm }) => {
+    async ({ title, description, techniques, severity, tlp, observables, confirm, operationKey }) => {
       try {
         // Resolve techniques
         const resolvedTechs = techniques
@@ -330,8 +332,10 @@ export function registerTheHiveTools(
           };
         }
 
+        const operation = await operationClient(client, "mitre_thehive_create_case", operationKey, { title, description, techniques, severity, tlp, observables });
+
         // Create the case
-        const caseRes = await client.request<{ _id: string }>(
+        const caseRes = await operation.request<{ _id: string }>(
           "POST",
           "/api/v1/case",
           {
@@ -363,7 +367,7 @@ export function registerTheHiveTools(
         const addedObservables: string[] = [];
         if (observables && observables.length > 0) {
           for (const obs of observables) {
-            const obsRes = await client.request(
+            const obsRes = await operation.request(
               "POST",
               `/api/v1/case/${safeCaseId}/observable`,
               {
@@ -390,7 +394,7 @@ export function registerTheHiveTools(
             .map((t) => `${t.id} ${t.name}`)
             .join(", ");
 
-          const taskRes = await client.request(
+          const taskRes = await operation.request(
             "POST",
             `/api/v1/case/${safeCaseId}/task`,
             {
@@ -406,11 +410,15 @@ export function registerTheHiveTools(
           }
         }
 
+        await operation.finish();
+
         return {
           content: [
             {
               type: "text" as const,
               text: externalDataJson({
+                  operationKey,
+                  operationId: operation.operationId,
                   caseId,
                   title,
                   techniquesLinked: resolvedTechs.map((t) => t.id),

@@ -1,3 +1,4 @@
+import { operationClient } from "./operation.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -192,6 +193,7 @@ export function registerCortexTools(
         .number()
         .optional()
         .describe("TLP level (0=white, 1=green, 2=amber, 3=red, default: 2)"),
+      operationKey: z.string().optional().describe("Stable operation key required for actual writes. Reuse the same key and payload on every retry. Uncertain outcomes block until operator reconciliation."),
       confirm: z
         .boolean()
         .optional()
@@ -199,13 +201,16 @@ export function registerCortexTools(
           "Must be true to actually submit live analyzer jobs to Cortex against the observable. Defaults to false (dry-run: returns the analyzers that would run without submitting). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
         ),
     },
-    async ({ data, dataType, analyzers, tlp, confirm }) => {
+    async ({ data, dataType, analyzers, tlp, confirm, operationKey }) => {
       try {
         // dataType is schema-constrained, but encode defensively before it
         // enters the request path.
         const safeDataType = safePathSegment(dataType, "dataType");
         // Get available analyzers for this data type
-        const analyzersRes = await client.request<
+        const operation = writesAllowed(confirm)
+          ? await operationClient(client, "mitre_cortex_run_analyzers", operationKey, { data, dataType, analyzers, tlp })
+          : undefined;
+        const analyzersRes = !writesAllowed(confirm) ? { ok: true, data: (analyzers || []).map(name => ({ id: name, name, dataTypeList: [dataType] })) } : await client.request<
           Array<{ id: string; name: string; dataTypeList: string[] }>
         >("GET", `/api/analyzer/type/${safeDataType}`);
 
@@ -268,11 +273,13 @@ export function registerCortexTools(
           };
         }
 
+        if (!operation) throw new Error("Operation unavailable");
+
         // Run analyzers (submit jobs)
         const jobs: Array<{ analyzerId: string; analyzerName: string; jobId?: string; error?: string }> = [];
 
         for (const analyzer of analyzersToRun) {
-          const jobRes = await client.request<{ id: string }>(
+          const jobRes = await operation.request<{ id: string }>(
             "POST",
             `/api/analyzer/${safePathSegment(analyzer.id, "analyzerId")}/run`,
             {
@@ -315,11 +322,15 @@ export function registerCortexTools(
           })
           .filter((t): t is NonNullable<typeof t> => t !== null);
 
+        await operation.finish();
+
         return {
           content: [
             {
               type: "text" as const,
               text: externalDataJson({
+                  operationKey,
+                  operationId: operation.operationId,
                   observable: { data, dataType },
                   analyzersRun: jobs.filter((j) => j.jobId).length,
                   analyzersFailed: jobs.filter((j) => j.error).length,

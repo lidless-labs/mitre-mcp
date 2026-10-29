@@ -1,3 +1,4 @@
+import { operationClient } from "./operation.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -401,6 +402,7 @@ export function registerMispTools(
         )
         .optional()
         .describe("Attributes/IOCs to add"),
+      operationKey: z.string().optional().describe("Stable operation key required for actual writes. Reuse the same key and payload on every retry. Uncertain outcomes block until operator reconciliation."),
       confirm: z
         .boolean()
         .optional()
@@ -408,7 +410,7 @@ export function registerMispTools(
           "Must be true to actually create the event in MISP. Defaults to false (dry-run: returns the event that would be created without writing). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
         ),
     },
-    async ({ info, techniques, threatLevel, distribution, attributes, confirm }) => {
+    async ({ info, techniques, threatLevel, distribution, attributes, confirm, operationKey }) => {
       try {
         const resolvedTechs = techniques
           .map((id) => store.getTechnique(id))
@@ -445,8 +447,10 @@ export function registerMispTools(
           };
         }
 
+        const operation = await operationClient(client, "mitre_misp_create_event", operationKey, { info, techniques, threatLevel, distribution, attributes });
+
         // Create event
-        const eventRes = await client.request<{
+        const eventRes = await operation.request<{
           Event?: { id: string; uuid: string; info: string };
         }>("POST", "/events/add", {
           Event: {
@@ -477,7 +481,7 @@ export function registerMispTools(
         const addedTags: string[] = [];
         for (const tech of resolvedTechs) {
           const tagName = `misp-galaxy:mitre-attack-pattern="${tech.id} - ${tech.name}"`;
-          const tagRes = await client.request("POST", `/events/addTag/${safeEventId}`, {
+          const tagRes = await operation.request("POST", `/events/addTag/${safeEventId}`, {
             tag: tagName,
           });
           if (tagRes.ok) addedTags.push(tagName);
@@ -486,7 +490,7 @@ export function registerMispTools(
         // Add tactic tags
         const tactics = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
         for (const tactic of tactics) {
-          const tagRes = await client.request("POST", `/events/addTag/${safeEventId}`, {
+          const tagRes = await operation.request("POST", `/events/addTag/${safeEventId}`, {
             tag: `mitre:tactic="${tactic}"`,
           });
           if (tagRes.ok) addedTags.push(`mitre:tactic="${tactic}"`);
@@ -496,7 +500,7 @@ export function registerMispTools(
         const addedAttributes: string[] = [];
         if (attributes && attributes.length > 0) {
           for (const attr of attributes) {
-            const attrRes = await client.request(
+            const attrRes = await operation.request(
               "POST",
               `/attributes/add/${safeEventId}`,
               {
@@ -513,11 +517,15 @@ export function registerMispTools(
           }
         }
 
+        await operation.finish();
+
         return {
           content: [
             {
               type: "text" as const,
               text: externalDataJson({
+                  operationKey,
+                  operationId: operation.operationId,
                   eventId,
                   eventUuid: eventRes.data.Event.uuid,
                   info,
