@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, readdir, readFile, symlink, chmod, open, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../src/index.js";
@@ -117,4 +117,10 @@ it("rejects a state root beneath a directory writable by other users", async () 
   const root = join(state, "child"); await mkdir(root, { mode: 0o700 }); await chmod(state, 0o777);
   vi.stubEnv("MITRE_SOC_STATE_DIR", root);
   expect((await call(lanes[0])).isError).toBe(true); expect(MispClient.prototype.request).not.toHaveBeenCalled();
+});
+
+it("rejects relative state paths rather than changing operation identity with the working directory", async () => {
+  vi.stubEnv("MITRE_SOC_STATE_DIR", relative(process.cwd(), state));
+  expect((await call(lanes[0])).isError).toBe(true);
+  expect(MispClient.prototype.request).not.toHaveBeenCalled(); expect(await readdir(state)).toEqual([]);
 });

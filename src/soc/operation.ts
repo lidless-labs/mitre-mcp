@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { SocResponse } from "./client.js";
 
 const hash = (data: unknown) => createHash("sha256").update(JSON.stringify(data)).digest("hex");
@@ -67,7 +67,9 @@ export async function operationClient(
   const fail = (reason: string) => new OperationError(`Operation ${operationKey} (${operationId}): ${reason}. Inspect the private receipt and remote state with read tools. Do not retry with a new key or delete receipts to bypass this block.`);
   let path: string;
   try {
-    const root = resolve(process.env.MITRE_SOC_STATE_DIR || join(homedir(), ".mitre-mcp", "operations"));
+    const configuredRoot = process.env.MITRE_SOC_STATE_DIR;
+    if (configuredRoot && !isAbsolute(configuredRoot)) throw new Error();
+    const root = resolve(configuredRoot || join(homedir(), ".mitre-mcp", "operations"));
     await privateDirectory(root); path = join(root, operationId); await privateDirectory(path);
     const fingerprint = hash(payload);
     const created = await exclusive(join(path, "operation.json"), { fingerprint });

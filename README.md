@@ -542,14 +542,16 @@ on every retry. Responses include the key and a hashed operation ID. Dry runs
 need no key and perform no network calls or journal writes.
 
 The private journal defaults to `~/.mitre-mcp/operations`. Operators can set
-`MITRE_SOC_STATE_DIR` to an absolute local path. The state root must be owned by
+`MITRE_SOC_STATE_DIR` to an absolute local path. Relative paths are rejected. The state root must be owned by
 the process user with mode 0700, with no symlink components. Its ancestors must be owned by the process user or root and must prevent
 replacement by other users (sticky temporary directories are accepted). All
 other processes running as that user are trusted. Use one durable local
 state directory across server restarts and concurrent processes. Keys are scoped to the normalized target and workflow, so credential rotation
 does not create a fresh operation. Separate hosts or state directories do not
 coordinate. Do not delete or rotate this state while
-operations can be retried. Back it up as private operational data.
+operations can be retried. Back it up as private operational data. SOC writes require filesystem support
+for POSIX ownership and permissions, exclusive creation, no-follow opens, and
+file/directory fsync. Unsupported state storage fails closed.
 
 Before each mutation the server durably claims a step using an exclusive file.
 Successful receipts retain only request hashes and remote IDs. A retry skips
