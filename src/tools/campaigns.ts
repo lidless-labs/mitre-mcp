@@ -1,3 +1,4 @@
+import { referenceDataJson } from "../output.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -157,7 +158,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 {
                   observedTechniqueCount: observedTechniques.length,
                   tacticCoverage,
@@ -178,7 +179,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,
@@ -262,7 +263,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 {
                   id: campaign.id,
                   name: campaign.name,
@@ -286,7 +287,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,
@@ -314,7 +315,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 { count: campaigns.length, campaigns },
                 null,
                 2,
@@ -327,7 +328,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,
@@ -366,7 +367,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 { count: results.length, campaigns: summary },
                 null,
                 2,
@@ -379,7 +380,7 @@ export function registerCampaignTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,

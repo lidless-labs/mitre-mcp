@@ -1,3 +1,4 @@
+import { referenceDataJson } from "../output.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -30,7 +31,7 @@ export function registerTacticTools(
 
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify(tactics, null, 2) },
+            { type: "text" as const, text: referenceDataJson(tactics, null, 2) },
           ],
         };
       } catch (error) {
@@ -38,7 +39,7 @@ export function registerTacticTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,
@@ -85,7 +86,7 @@ export function registerTacticTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 {
                   id: tactic.id,
                   name: tactic.name,
@@ -105,7 +106,7 @@ export function registerTacticTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,

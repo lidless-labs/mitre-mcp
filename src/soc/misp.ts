@@ -1,8 +1,9 @@
+import { operationClient } from "./operation.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { MispClient } from "./client.js";
-import { safePathSegment, writesAllowed } from "./util.js";
+import { safePathSegment, writesAllowed, externalDataJson, socRequestError, socFailure } from "./util.js";
 
 export function registerMispTools(
   server: McpServer,
@@ -63,7 +64,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch MISP event ${eventId}: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -210,8 +211,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   eventId: event.id,
                   eventInfo: event.info,
                   eventDate: event.date,
@@ -224,10 +224,7 @@ export function registerMispTools(
                   iocs: iocs.slice(0, 20),
                   likelyThreatGroups: groupMatches,
                   suggestedDataSources: [...suggestedDataSources],
-                },
-                null,
-                2,
-              ),
+                }, "MISP"),
             },
           ],
         };
@@ -236,7 +233,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -319,7 +316,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: `MISP search failed: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -355,15 +352,11 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   searchCriteria: { techniqueId, groupName, indicatorType },
                   resultCount: results.length,
                   indicators: results,
-                },
-                null,
-                2,
-              ),
+                }, "MISP"),
             },
           ],
         };
@@ -372,7 +365,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -409,6 +402,7 @@ export function registerMispTools(
         )
         .optional()
         .describe("Attributes/IOCs to add"),
+      operationKey: z.string().optional().describe("Stable operation key required for actual writes. Reuse the same key and payload on every retry. Uncertain outcomes block until operator reconciliation."),
       confirm: z
         .boolean()
         .optional()
@@ -416,8 +410,16 @@ export function registerMispTools(
           "Must be true to actually create the event in MISP. Defaults to false (dry-run: returns the event that would be created without writing). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
         ),
     },
-    async ({ info, techniques, threatLevel, distribution, attributes, confirm }) => {
+    async ({ info, techniques, threatLevel, distribution, attributes, confirm, operationKey }) => {
+      let operation: Awaited<ReturnType<typeof operationClient>> | undefined;
       try {
+        operation = writesAllowed(confirm)
+          ? await operationClient(client, "mitre_misp_create_event", operationKey, { info, techniques, threatLevel, distribution, attributes })
+          : undefined;
+        if (operation?.completed) {
+          const event = operation.completed.knownSteps[0]?.data?.Event as { id?: string; uuid?: string } | undefined;
+          return { content: [{ type: "text" as const, text: externalDataJson({ operationKey, ...operation.completed, eventId: event?.id, eventUuid: event?.uuid }, "MISP") }] };
+        }
         const resolvedTechs = techniques
           .map((id) => store.getTechnique(id))
           .filter((t): t is NonNullable<typeof t> => !!t);
@@ -433,8 +435,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(
-                  {
+                text: externalDataJson({
                     dryRun: true,
                     message:
                       "Dry run: no event created. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to create.",
@@ -448,100 +449,48 @@ export function registerMispTools(
                         (a) => `${a.type}: ${a.value}`,
                       ),
                     },
-                  },
-                  null,
-                  2,
-                ),
+                  }, "MISP"),
               },
             ],
           };
         }
 
-        // Create event
-        const eventRes = await client.request<{
-          Event?: { id: string; uuid: string; info: string };
-        }>("POST", "/events/add", {
-          Event: {
-            info,
-            threat_level_id: threatLevelId,
-            distribution: distribution ?? 0,
-            analysis: "0", // Initial
-            date: new Date().toISOString().split("T")[0],
-          },
-        });
-
-        if (!eventRes.ok || !eventRes.data?.Event) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Failed to create MISP event: ${eventRes.error || `HTTP ${eventRes.status}`}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const eventId = eventRes.data.Event.id;
-        const safeEventId = safePathSegment(eventId, "eventId");
-
-        // Add ATT&CK technique tags
-        const addedTags: string[] = [];
-        for (const tech of resolvedTechs) {
-          const tagName = `misp-galaxy:mitre-attack-pattern="${tech.id} - ${tech.name}"`;
-          const tagRes = await client.request("POST", `/events/addTag/${safeEventId}`, {
-            tag: tagName,
-          });
-          if (tagRes.ok) addedTags.push(tagName);
-        }
-
-        // Add tactic tags
-        const tactics = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
-        for (const tactic of tactics) {
-          const tagRes = await client.request("POST", `/events/addTag/${safeEventId}`, {
-            tag: `mitre:tactic="${tactic}"`,
-          });
-          if (tagRes.ok) addedTags.push(`mitre:tactic="${tactic}"`);
-        }
-
-        // Add attributes
-        const addedAttributes: string[] = [];
-        if (attributes && attributes.length > 0) {
-          for (const attr of attributes) {
-            const attrRes = await client.request(
-              "POST",
-              `/attributes/add/${safeEventId}`,
-              {
-                type: attr.type,
-                value: attr.value,
-                category: attr.category || "Network activity",
-                to_ids: attr.toIds ?? true,
-                comment: attr.comment || "",
-              },
-            );
-            if (attrRes.ok) {
-              addedAttributes.push(`${attr.type}: ${attr.value}`);
-            }
-          }
-        }
+        if (!operation) throw new Error("Operation unavailable");
+        const tactics = [...new Set(resolvedTechs.flatMap((t) => t.tactics))].sort();
+        const addedTags = [
+          ...resolvedTechs.map(tech => `misp-galaxy:mitre-attack-pattern="${tech.id} - ${tech.name}"`),
+          ...tactics.map(tactic => `mitre:tactic="${tactic}"`),
+        ].sort();
+        const addedAttributes = (attributes || []).map(attr => `${attr.type}: ${attr.value}`);
+        const responses = await operation.run([
+          { route: "/events/add", body: { Event: {
+            info, threat_level_id: threatLevelId, distribution: distribution ?? 0,
+            analysis: "0", date: operation.date,
+          } } },
+          ...addedTags.map(tag => ({ route: "/events/addTag/{id}", body: { tag } })),
+          ...(attributes || []).map(attr => ({ route: "/attributes/add/{id}", body: {
+            type: attr.type, value: attr.value, category: attr.category || "Network activity",
+            to_ids: attr.toIds ?? true, comment: attr.comment || "",
+          } })),
+        ], first => safePathSegment((first.Event as { id: string })?.id, "eventId"));
+        const event = responses[0].data?.Event as { id: string; uuid?: string };
+        const eventId = event.id;
 
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
+                  operationKey,
+                  operationId: operation.operationId,
                   eventId,
-                  eventUuid: eventRes.data.Event.uuid,
+                  eventUuid: event.uuid,
                   info,
                   techniquesTagged: resolvedTechs.map((t) => t.id),
                   tacticsTagged: tactics,
                   tagsAdded: addedTags.length,
                   attributesAdded: addedAttributes,
-                },
-                null,
-                2,
-              ),
+                }, "MISP"),
             },
           ],
         };
@@ -550,7 +499,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(operation?.error(error) ?? error),
             },
           ],
           isError: true,
@@ -604,7 +553,7 @@ export function registerMispTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to list MISP events: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -647,11 +596,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                { count: events.length, events },
-                null,
-                2,
-              ),
+              text: externalDataJson({ count: events.length, events }, "MISP"),
             },
           ],
         };
@@ -660,7 +605,7 @@ export function registerMispTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,

@@ -1,8 +1,9 @@
+import { operationClient } from "./operation.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
 import type { TheHiveClient } from "./client.js";
-import { safePathSegment, writesAllowed } from "./util.js";
+import { safePathSegment, writesAllowed, externalDataJson, socRequestError, socFailure } from "./util.js";
 
 export function registerTheHiveTools(
   server: McpServer,
@@ -37,7 +38,7 @@ export function registerTheHiveTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch case ${caseId}: ${caseRes.error || `HTTP ${caseRes.status}`}`,
+                text: socFailure(caseRes),
               },
             ],
             isError: true,
@@ -187,8 +188,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   caseId: theCase._id,
                   caseTitle: theCase.title,
                   caseSeverity: theCase.severity,
@@ -200,10 +200,7 @@ export function registerTheHiveTools(
                   suggestedMitigations: mitigations,
                   likelyThreatGroups: groupMatches,
                   tagsAdded,
-                },
-                null,
-                2,
-              ),
+                }, "TheHive"),
             },
           ],
         };
@@ -212,7 +209,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -249,6 +246,7 @@ export function registerTheHiveTools(
         )
         .optional()
         .describe("Observables to add to the case"),
+      operationKey: z.string().optional().describe("Stable operation key required for actual writes. Reuse the same key and payload on every retry. Uncertain outcomes block until operator reconciliation."),
       confirm: z
         .boolean()
         .optional()
@@ -256,14 +254,23 @@ export function registerTheHiveTools(
           "Must be true to actually create the case in TheHive. Defaults to false (dry-run: returns the case that would be created without writing). Can also be globally enabled via MITRE_SOC_ALLOW_WRITES.",
         ),
     },
-    async ({ title, description, techniques, severity, tlp, observables, confirm }) => {
+    async ({ title, description, techniques, severity, tlp, observables, confirm, operationKey }) => {
+      let operation: Awaited<ReturnType<typeof operationClient>> | undefined;
       try {
+        operation = writesAllowed(confirm)
+          ? await operationClient(client, "mitre_thehive_create_case", operationKey, { title, description, techniques, severity, tlp, observables })
+          : undefined;
+        if (operation?.completed) {
+          return { content: [{ type: "text" as const, text: externalDataJson({ operationKey, ...operation.completed, caseId: operation.completed.knownSteps[0]?.data?._id }, "TheHive") }] };
+        }
         // Resolve techniques
         const resolvedTechs = techniques
           .map((id) => store.getTechnique(id))
-          .filter((t): t is NonNullable<typeof t> => !!t);
+          .filter((t): t is NonNullable<typeof t> => !!t)
+          .map(t => ({ ...t, tactics: [...t.tactics].sort() }));
 
         if (resolvedTechs.length === 0) {
+          if (operation) throw operation.error();
           return {
             content: [
               {
@@ -283,7 +290,7 @@ export function registerTheHiveTools(
         const mitigationContext = resolvedTechs
           .flatMap((t) => {
             const mits = store.getMitigationsForTechnique(t.id);
-            return mits.map(
+            return [...mits].sort((a, b) => a.mitigation.id < b.mitigation.id ? -1 : a.mitigation.id > b.mitigation.id ? 1 : 0).map(
               (m) => `- ${m.mitigation.id} ${m.mitigation.name} (for ${t.id})`,
             );
           })
@@ -313,8 +320,7 @@ export function registerTheHiveTools(
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(
-                  {
+                text: externalDataJson({
                     dryRun: true,
                     message:
                       "Dry run: no case created. Set confirm=true (or MITRE_SOC_ALLOW_WRITES=true) to create.",
@@ -329,107 +335,47 @@ export function registerTheHiveTools(
                       ),
                       tasksToCreate: tacticPhases.map((t) => `Investigate: ${t}`),
                     },
-                  },
-                  null,
-                  2,
-                ),
+                  }, "TheHive"),
               },
             ],
           };
         }
 
-        // Create the case
-        const caseRes = await client.request<{ _id: string }>(
-          "POST",
-          "/api/v1/case",
-          {
-            title,
-            description: fullDescription,
-            severity: severity || 2,
-            tlp: tlp || 2,
-            tags,
-            flag: false,
-          },
-        );
-
-        if (!caseRes.ok || !caseRes.data) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Failed to create case: ${caseRes.error || `HTTP ${caseRes.status}`}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const caseId = caseRes.data._id;
-        const safeCaseId = safePathSegment(caseId, "caseId");
-
-        // Add observables if provided
-        const addedObservables: string[] = [];
-        if (observables && observables.length > 0) {
-          for (const obs of observables) {
-            const obsRes = await client.request(
-              "POST",
-              `/api/v1/case/${safeCaseId}/observable`,
-              {
-                dataType: obs.dataType,
-                data: obs.data,
-                ioc: obs.ioc || false,
-                message: obs.message || "",
-                tags: [],
-              },
-            );
-            if (obsRes.ok) {
-              addedObservables.push(`${obs.dataType}: ${obs.data}`);
-            }
-          }
-        }
-
-        // Create tasks for each tactic phase
-        const tacticPhases = [...new Set(resolvedTechs.flatMap((t) => t.tactics))];
-        const createdTasks: string[] = [];
-
-        for (const tactic of tacticPhases) {
-          const relevantTechs = resolvedTechs
-            .filter((t) => t.tactics.includes(tactic))
-            .map((t) => `${t.id} ${t.name}`)
-            .join(", ");
-
-          const taskRes = await client.request(
-            "POST",
-            `/api/v1/case/${safeCaseId}/task`,
-            {
-              title: `Investigate: ${tactic}`,
-              description: `Investigate techniques in the ${tactic} phase: ${relevantTechs}`,
-              status: "Waiting",
-              flag: false,
-            },
-          );
-
-          if (taskRes.ok) {
-            createdTasks.push(`Investigate: ${tactic}`);
-          }
-        }
+        if (!operation) throw new Error("Operation unavailable");
+        const tacticPhases = [...new Set(resolvedTechs.flatMap(t => t.tactics))].sort();
+        const createdTasks = tacticPhases.map(tactic => `Investigate: ${tactic}`);
+        const addedObservables = (observables || []).map(obs => `${obs.dataType}: ${obs.data}`);
+        const responses = await operation.run([
+          { route: "/api/v1/case", body: {
+            title, description: fullDescription, severity: severity || 2,
+            tlp: tlp || 2, tags, flag: false,
+          } },
+          ...(observables || []).map(obs => ({ route: "/api/v1/case/{id}/observable", body: {
+            dataType: obs.dataType, data: obs.data, ioc: obs.ioc || false,
+            message: obs.message || "", tags: [],
+          } })),
+          ...tacticPhases.map(tactic => ({ route: "/api/v1/case/{id}/task", body: {
+            title: `Investigate: ${tactic}`,
+            description: `Investigate techniques in the ${tactic} phase: ${resolvedTechs.filter(t => t.tactics.includes(tactic)).map(t => `${t.id} ${t.name}`).join(", ")}`,
+            status: "Waiting", flag: false,
+          } })),
+        ], first => safePathSegment(first._id as string, "caseId"));
+        const caseId = responses[0].data?._id;
 
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
+                  operationKey,
+                  operationId: operation.operationId,
                   caseId,
                   title,
                   techniquesLinked: resolvedTechs.map((t) => t.id),
                   tags,
                   observablesAdded: addedObservables,
                   tasksCreated: createdTasks,
-                },
-                null,
-                2,
-              ),
+                }, "TheHive"),
             },
           ],
         };
@@ -438,7 +384,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(operation?.error(error) ?? error),
             },
           ],
           isError: true,
@@ -488,7 +434,7 @@ export function registerTheHiveTools(
             content: [
               {
                 type: "text" as const,
-                text: `Failed to list cases: ${res.error || `HTTP ${res.status}`}`,
+                text: socFailure(res),
               },
             ],
             isError: true,
@@ -533,11 +479,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                { count: enriched.length, cases: enriched },
-                null,
-                2,
-              ),
+              text: externalDataJson({ count: enriched.length, cases: enriched }, "TheHive"),
             },
           ],
         };
@@ -546,7 +488,7 @@ export function registerTheHiveTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,

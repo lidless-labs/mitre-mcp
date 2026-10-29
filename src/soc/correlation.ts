@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { externalDataJson, socRequestError, socFailure } from "./util.js";
 import type { AttackDataStore } from "../data/index.js";
 import type { WazuhClient, TheHiveClient, MispClient } from "./client.js";
 
@@ -24,7 +25,7 @@ export function registerCorrelationTools(
           const res = await clients.wazuh.request("GET", "/manager/info");
           status.wazuh = res.ok
             ? { connected: true, details: res.data }
-            : { connected: false, error: res.error };
+            : { connected: false, error: socFailure(res) };
         } else {
           status.wazuh = { connected: false, error: "Not configured (set WAZUH_URL)" };
         }
@@ -33,7 +34,7 @@ export function registerCorrelationTools(
           const res = await clients.thehive.request("GET", "/api/v1/user/current");
           status.thehive = res.ok
             ? { connected: true, details: { user: (res.data as Record<string, unknown>)?.login } }
-            : { connected: false, error: res.error };
+            : { connected: false, error: socFailure(res) };
         } else {
           status.thehive = { connected: false, error: "Not configured (set THEHIVE_URL)" };
         }
@@ -42,7 +43,7 @@ export function registerCorrelationTools(
           const res = await clients.misp.request("GET", "/servers/getVersion");
           status.misp = res.ok
             ? { connected: true, details: res.data }
-            : { connected: false, error: res.error };
+            : { connected: false, error: socFailure(res) };
         } else {
           status.misp = { connected: false, error: "Not configured (set MISP_URL)" };
         }
@@ -53,14 +54,10 @@ export function registerCorrelationTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                {
+              text: externalDataJson({
                   socIntegrations: status,
                   attackData: attackStats,
-                },
-                null,
-                2,
-              ),
+                }, "Wazuh, TheHive, MISP"),
             },
           ],
         };
@@ -69,7 +66,7 @@ export function registerCorrelationTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
@@ -289,7 +286,7 @@ export function registerCorrelationTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(results, null, 2),
+              text: externalDataJson(results, "Wazuh, TheHive, MISP"),
             },
           ],
         };
@@ -298,7 +295,7 @@ export function registerCorrelationTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: socRequestError(error),
             },
           ],
           isError: true,
