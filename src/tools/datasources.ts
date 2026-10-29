@@ -1,3 +1,4 @@
+import { referenceDataJson } from "../output.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -64,7 +65,7 @@ export function registerDataSourceTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 {
                   id: ds.id,
                   name: ds.name,
@@ -84,7 +85,7 @@ export function registerDataSourceTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,
@@ -192,7 +193,7 @@ export function registerDataSourceTools(
 
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+            { type: "text" as const, text: referenceDataJson(result, null, 2) },
           ],
         };
       } catch (error) {
@@ -200,7 +201,7 @@ export function registerDataSourceTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,

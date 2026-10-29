@@ -1,3 +1,4 @@
+import { referenceDataJson } from "./output.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AttackDataStore } from "./data/index.js";
 import { getLastUpdated } from "./data/loader.js";
@@ -40,7 +41,7 @@ export function registerResources(
           {
             uri: "mitre://matrix/enterprise",
             mimeType: "application/json",
-            text: JSON.stringify(matrix, null, 2),
+            text: referenceDataJson(matrix, null, 2),
           },
         ],
       };
@@ -63,7 +64,7 @@ export function registerResources(
           {
             uri: "mitre://version",
             mimeType: "application/json",
-            text: JSON.stringify(
+            text: referenceDataJson(
               {
                 matrices: config.matrices,
                 lastUpdated: lastUpdated || "never",
@@ -98,7 +99,7 @@ export function registerResources(
           {
             uri: "mitre://tactics",
             mimeType: "application/json",
-            text: JSON.stringify(tactics, null, 2),
+            text: referenceDataJson(tactics, null, 2),
           },
         ],
       };

@@ -1,3 +1,4 @@
+import { referenceDataJson } from "../output.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -122,7 +123,7 @@ export function registerNavigatorTools(
               content: [
                 {
                   type: "text" as const,
-                  text: JSON.stringify(layer, null, 2),
+                  text: referenceDataJson(layer, null, 2),
                 },
               ],
             };
@@ -166,7 +167,7 @@ export function registerNavigatorTools(
               content: [
                 {
                   type: "text" as const,
-                  text: JSON.stringify(layer, null, 2),
+                  text: referenceDataJson(layer, null, 2),
                 },
               ],
             };
@@ -198,7 +199,7 @@ export function registerNavigatorTools(
               content: [
                 {
                   type: "text" as const,
-                  text: JSON.stringify(layer, null, 2),
+                  text: referenceDataJson(layer, null, 2),
                 },
               ],
             };
@@ -241,7 +242,7 @@ export function registerNavigatorTools(
               content: [
                 {
                   type: "text" as const,
-                  text: JSON.stringify(layer, null, 2),
+                  text: referenceDataJson(layer, null, 2),
                 },
               ],
             };
@@ -260,7 +261,7 @@ export function registerNavigatorTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,

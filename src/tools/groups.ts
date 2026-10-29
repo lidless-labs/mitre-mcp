@@ -1,3 +1,4 @@
+import { referenceDataJson } from "../output.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AttackDataStore } from "../data/index.js";
@@ -66,7 +67,7 @@ export function registerGroupTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 {
                   id: group.id,
                   name: group.name,
@@ -87,7 +88,7 @@ export function registerGroupTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,
@@ -124,7 +125,7 @@ export function registerGroupTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 { count: results.length, groups: summary },
                 null,
                 2,
@@ -137,7 +138,7 @@ export function registerGroupTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,
@@ -163,7 +164,7 @@ export function registerGroupTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
+              text: referenceDataJson(
                 { count: groups.length, groups },
                 null,
                 2,
@@ -176,7 +177,7 @@ export function registerGroupTools(
           content: [
             {
               type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              text: "ATT&CK request failed.",
             },
           ],
           isError: true,

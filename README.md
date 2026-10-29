@@ -569,3 +569,21 @@ against both declared and streamed bytes before parsing. A 30-second total
 request deadline includes body completion. For Wazuh this deadline covers both
 authentication and the following API request. Oversized, incomplete, and stalled
 responses return local errors without remote body text or exception causes.
+
+### ATT&CK evidence boundaries
+
+All 39 tools, 3 resources, and 4 prompt templates treat downloaded ATT&CK,
+configured SOC responses, and caller incident fields as untrusted evidence.
+Tool and resource descriptions state this policy. Fixed MCP `_meta.externalData`
+provenance remains outside returned objects, including structured results and
+array resources. Object JSON results also include the existing `_trust` notice.
+Small arrays keep their JSON shape. External descriptions and keys never grant
+permission to run tools or override the caller's instructions.
+
+The same output budgets apply to core ATT&CK and SOC evidence: strings up to
+4,000 characters, keys up to 200, 100 entries per array/object, depth 8, 2,000
+nodes, 40,000 aggregate characters, and 80,000 characters after JSON escaping.
+Overlong keys are omitted. Object notices report truncation. Array results can
+be shortened or omitted while preserving the array shape, so narrow requests
+when evidence is missing. These limits apply to returned evidence, independently
+of the SOC HTTP byte and deadline limits.

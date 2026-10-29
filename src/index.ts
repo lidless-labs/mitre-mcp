@@ -1,3 +1,4 @@
+import { installEvidenceBoundary } from "./output.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -55,6 +56,8 @@ export function createMcpServer(config: ReturnType<typeof loadConfig>, store: At
     description:
       "MITRE ATT&CK MCP server with SOC integration (Wazuh, TheHive, Cortex, MISP). Technique lookup, threat intelligence, detection coverage, alert mapping, campaign analysis, and cross-stack correlation.",
   });
+
+  installEvidenceBoundary(server);
 
   // Register core ATT&CK tools
   registerTechniqueTools(server, store);
